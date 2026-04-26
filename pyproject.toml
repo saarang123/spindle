@@ -1,0 +1,54 @@
+[project]
+name = "spindle"
+version = "0.1.0"
+description = "Local job fabric for heterogeneous generative ML workloads."
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["core"]
+# api, dispatcher, workers, cli will be added as they come online
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["core/src"]
+
+[tool.ruff.lint]
+select = [
+  "E",      # pycodestyle errors
+  "F",      # pyflakes
+  "I",      # isort
+  "B",      # bugbear
+  "UP",     # pyupgrade
+  "N",      # pep8-naming
+  "ASYNC",  # async lints
+  "RUF",    # ruff-specific
+  "SIM",    # simplify
+  "TID",    # tidy imports
+]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S", "ASYNC"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pyright]
+include = ["core/src", "core/tests"]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+reportMissingTypeStubs = false
+# Strict mode fights motor's incomplete generic stubs more than it helps. Use
+# standard mode for now; tighten when the ecosystem catches up.
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["core/tests"]
+markers = [
+  "integration: requires docker / external services",
+]

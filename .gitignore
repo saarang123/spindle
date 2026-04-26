@@ -1,0 +1,54 @@
+# env
+.env
+.env.local
+.env.*.local
+
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.Python
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.cover
+.tox/
+.hypothesis/
+
+# uv
+.venv/
+venv/
+
+# editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# build
+dist/
+build/
+*.egg
+
+# spindle local data
+artifacts/
+data/
+logs/
+*.sqlite
+*.sqlite-journal
+.spindle/
+
+# secrets
+secrets/
+*.pem
+*.key
+
+# os
+Thumbs.db
