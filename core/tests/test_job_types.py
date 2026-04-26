@@ -19,7 +19,7 @@ from spindle_core import (
 
 
 def test_job_defaults() -> None:
-    job = Job(type="cpu.echo", input={"message": "hi"})
+    job = Job(type="cpu.echo", input={"message": "hi"}, config_id="cpu-echo-v1")
     assert job.id is not None
     assert job.status == JobStatus.CREATED
     assert job.priority == 5
@@ -32,6 +32,15 @@ def test_job_defaults() -> None:
     assert job.created_at.tzinfo is UTC
     assert job.updated_at.tzinfo is UTC
     assert job.is_terminal is False
+
+
+def test_job_requires_config_id() -> None:
+    """config_id is mandatory (per-config queue routing requires it)."""
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Job(type="cpu.echo", input={})  # type: ignore[call-arg]
 
 
 def test_job_round_trip_dict() -> None:
@@ -57,7 +66,7 @@ def test_job_status_terminal_membership() -> None:
 
 
 def test_job_is_terminal_property() -> None:
-    job = Job(type="cpu.echo", input={}, status=JobStatus.SUCCEEDED)
+    job = Job(type="cpu.echo", input={}, config_id="cpu-echo-v1", status=JobStatus.SUCCEEDED)
     assert job.is_terminal is True
 
 
@@ -66,9 +75,9 @@ def test_job_priority_bounds() -> None:
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        Job(type="cpu.echo", input={}, priority=11)
+        Job(type="cpu.echo", input={}, config_id="cpu-echo-v1", priority=11)
     with pytest.raises(ValidationError):
-        Job(type="cpu.echo", input={}, priority=-1)
+        Job(type="cpu.echo", input={}, config_id="cpu-echo-v1", priority=-1)
 
 
 def test_error_payload_round_trip() -> None:
@@ -94,6 +103,7 @@ def test_job_with_error_payload() -> None:
     job = Job(
         type="cpu.echo",
         input={},
+        config_id="cpu-echo-v1",
         status=JobStatus.FAILED,
         error=ErrorPayload(
             code=ErrorCode.WORKER_LOST,

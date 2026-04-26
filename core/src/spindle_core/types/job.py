@@ -56,8 +56,10 @@ class Job(BaseModel):
     status: JobStatus = JobStatus.CREATED
     priority: int = Field(default=5, ge=0, le=10)
 
-    # scheduling routing
-    config_id: str | None = None
+    # scheduling routing — config_id is REQUIRED. Per-config queue routing
+    # (and worker selection) need a value. Even job types without a real
+    # model (e.g., cpu.echo, cpu.ffmpeg) reference a synthetic config.
+    config_id: str
     requested_node: str | None = None
 
     # grouping / lineage

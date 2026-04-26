@@ -24,9 +24,13 @@ from spindle_core.state.protocol import IdempotencyConflictError, StateStore
 
 
 def _make_job(**overrides) -> Job:  # type: ignore[no-untyped-def]
-    defaults = {"type": "cpu.echo", "input": {"message": "hi"}}
+    defaults: dict[str, object] = {
+        "type": "cpu.echo",
+        "input": {"message": "hi"},
+        "config_id": "cpu-echo-v1",
+    }
     defaults.update(overrides)
-    return Job(**defaults)
+    return Job(**defaults)  # type: ignore[arg-type]
 
 
 # ─── conformance — protocol satisfied ────────────────────────────────
@@ -53,7 +57,7 @@ async def test_create_and_get_job(state_store: MongoStateStore) -> None:
 async def test_create_job_auto_generates_id(state_store: MongoStateStore) -> None:
     """Caller doesn't pass an id; the Job's default_factory generates one and
     it round-trips through create_job and get_job."""
-    job = Job(type="cpu.echo", input={})
+    job = Job(type="cpu.echo", input={}, config_id="cpu-echo-v1")
     assert job.id is not None
     returned = await state_store.create_job(job)
     assert returned.id == job.id
