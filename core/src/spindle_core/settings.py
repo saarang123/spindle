@@ -29,6 +29,7 @@ class Settings(BaseSettings):
 
     # ─── backend selection ───────────────────────────────────────────
     state_backend: Literal["mongo"] = "mongo"
+    queue_backend: Literal["redis", "memory"] = "redis"
 
     # ─── mongo ───────────────────────────────────────────────────────
     mongo_url: str = "mongodb://localhost:27017"
@@ -39,6 +40,11 @@ class Settings(BaseSettings):
     # Set False only if you've profiled and from_doc is a hot path; see
     # spindle_core/state/_serialization.py for the trade-offs.
     state_validate_on_read: bool = True
+
+    # ─── redis ───────────────────────────────────────────────────────
+    redis_url: str = "redis://localhost:6379/0"
+    redis_queue_prefix: str = "spindle:queue"
+    redis_consumer_group: str = "dispatchers"
 
     # ─── logging ─────────────────────────────────────────────────────
     log_level: str = "INFO"

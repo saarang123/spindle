@@ -1,5 +1,6 @@
 """Spindle core — domain types, protocols, and backend implementations."""
 
+from spindle_core.types.config import ModelConfig
 from spindle_core.types.errors import RETRYABLE_ERROR_CODES, ErrorCode, ErrorPayload
 from spindle_core.types.events import JobEvent, JobEventType
 from spindle_core.types.job import TERMINAL_STATUSES, Job, JobStatus
@@ -15,4 +16,5 @@ __all__ = [
     "JobEventType",
     "JobStatus",
     "Lease",
+    "ModelConfig",
 ]

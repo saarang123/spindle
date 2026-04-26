@@ -23,6 +23,7 @@ from pymongo.errors import DuplicateKeyError
 from spindle_core._time import utcnow
 from spindle_core.state._serialization import from_doc, to_doc
 from spindle_core.state.protocol import IdempotencyConflictError
+from spindle_core.types.config import ModelConfig
 from spindle_core.types.events import JobEvent
 from spindle_core.types.job import Job, JobStatus
 
@@ -70,6 +71,7 @@ class MongoStateStore:
         self._db: AsyncIOMotorDatabase = self._client[db_name]
         self.jobs: AsyncIOMotorCollection = self._db["jobs"]
         self.events: AsyncIOMotorCollection = self._db["job_events"]
+        self.configs: AsyncIOMotorCollection = self._db["model_configs"]
         self._validate_on_read = validate_on_read
 
     # ─── lifecycle ───────────────────────────────────────────────────
@@ -100,6 +102,12 @@ class MongoStateStore:
         await self.events.create_index(
             [("job_id", ASCENDING), ("occurred_at", ASCENDING)],
             name="job_id_occurred_at",
+        )
+        # Configs: dispatcher's hot path is "what configs are on this node and
+        # currently active?" — index for it.
+        await self.configs.create_index(
+            [("preferred_node", ASCENDING), ("is_active", ASCENDING)],
+            name="preferred_node_is_active",
         )
 
     def close(self) -> None:
@@ -269,12 +277,63 @@ class MongoStateStore:
         cursor = self.events.find(filter_).sort("occurred_at", ASCENDING).limit(limit)
         return [from_doc(JobEvent, d, validate=self._validate_on_read) async for d in cursor]
 
+    # ─── model configs ───────────────────────────────────────────────
+
+    async def upsert_config(self, config: ModelConfig) -> ModelConfig:
+        # Always bump updated_at on upsert; preserve created_at if existing.
+        now = utcnow()
+        config_to_write = config.model_copy(update={"updated_at": now})
+        doc = to_doc(config_to_write)
+
+        # `replace_one` with upsert lets us preserve created_at if there's an
+        # existing record by re-reading it. Simpler: only set created_at via
+        # $setOnInsert.
+        set_fields = {k: v for k, v in doc.items() if k not in ("_id", "created_at")}
+        await self.configs.update_one(
+            {"_id": config.id},
+            {
+                "$set": set_fields,
+                "$setOnInsert": {"_id": config.id, "created_at": doc["created_at"]},
+            },
+            upsert=True,
+        )
+        # Read-back to return the canonical record (including the persisted
+        # created_at, which may differ from `config.created_at` if the row
+        # already existed).
+        result = await self.get_config(config.id)
+        assert result is not None  # we just upserted it
+        return result
+
+    async def get_config(self, config_id: str) -> ModelConfig | None:
+        doc = await self.configs.find_one({"_id": config_id})
+        return from_doc(ModelConfig, doc, validate=self._validate_on_read) if doc else None
+
+    async def list_configs(
+        self,
+        *,
+        active_only: bool = True,
+        node: str | None = None,
+    ) -> list[ModelConfig]:
+        filter_: dict[str, Any] = {}
+        if active_only:
+            filter_["is_active"] = True
+        if node is not None:
+            # Match configs preferring this node OR with no node preference.
+            filter_["$or"] = [{"preferred_node": node}, {"preferred_node": None}]
+        cursor = self.configs.find(filter_)
+        return [from_doc(ModelConfig, d, validate=self._validate_on_read) async for d in cursor]
+
+    async def delete_config(self, config_id: str) -> bool:
+        result = await self.configs.delete_one({"_id": config_id})
+        return result.deleted_count == 1
+
     # ─── test/admin helpers ──────────────────────────────────────────
 
     async def _drop_all(self) -> None:
-        """Test-only. Drops jobs + events collections."""
+        """Test-only. Drops jobs + events + configs collections."""
         await self.jobs.drop()
         await self.events.drop()
+        await self.configs.drop()
 
 
 __all__ = ["MongoStateStore"]

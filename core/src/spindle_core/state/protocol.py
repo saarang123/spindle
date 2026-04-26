@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
+from spindle_core.types.config import ModelConfig
 from spindle_core.types.events import JobEvent
 from spindle_core.types.job import Job, JobStatus
 
@@ -125,6 +126,28 @@ class StateStore(Protocol):
         after: datetime | None = None,
         limit: int = 200,
     ) -> list[JobEvent]: ...
+
+    # ─── model configs ───────────────────────────────────────────────
+
+    async def upsert_config(self, config: ModelConfig) -> ModelConfig:
+        """Insert or replace a config by `id`. Updates `updated_at`."""
+        ...
+
+    async def get_config(self, config_id: str) -> ModelConfig | None: ...
+
+    async def list_configs(
+        self,
+        *,
+        active_only: bool = True,
+        node: str | None = None,
+    ) -> list[ModelConfig]:
+        """List configs. `node` filters by `preferred_node` (None matches
+        configs that have `preferred_node=None` OR equals the given node)."""
+        ...
+
+    async def delete_config(self, config_id: str) -> bool:
+        """Hard delete a config. Returns True if it existed."""
+        ...
 
 
 class IdempotencyConflictError(Exception):
