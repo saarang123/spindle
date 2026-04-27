@@ -176,7 +176,7 @@ Every protocol method has documented semantics for atomicity, blocking behavior,
 - Hot model swap with zero downtime (we accept "drain queue, swap, resume").
 - Workflow DAG resolution (deferred to upstream agents).
 - ClickHouse-fronted dashboard UI (Phase 8+).
-- Public PyPI distribution (this is a personal project; cleanliness is for self-respect, not external users).
+- Public PyPI distribution.
 
 ## 8. Glossary
 
