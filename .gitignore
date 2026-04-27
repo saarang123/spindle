@@ -3,6 +3,10 @@
 .env.local
 .env.*.local
 
+# infra-local generated state
+infra/minio/.env
+infra/*/data/
+
 # python
 __pycache__/
 *.py[cod]
