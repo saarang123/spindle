@@ -1,34 +1,34 @@
 # Spindle — Status
 
 > One-page "where are we, what's working, what's next" reference. Updated as we go.
-> Last commit: 2026-04-26 — `core/queue` + `ModelConfig` + MinIO infra.
+> Last commit: 2026-04-26 — `core/artifacts` (S3/MinIO).
 
 ## Where we are in one paragraph
 
-Spindle is in active build-out of `core/` (the foundation everyone else depends on). Two of three swap-point protocols are implemented and battle-tested against real backends: **state** (Mongo) and **queue** (Redis Streams). The third — **artifacts** (S3/MinIO) — is the immediate next chunk. Worker and dispatcher process design is paused pending real-runtime learnings (Qwen on Spark, skills enumeration). The repo is private at `github.com/saarang123/spindle`, all quality gates green, 65 tests passing.
+Spindle is in active build-out of `core/` (the foundation everyone else depends on). All three swap-point protocols are implemented and battle-tested against real backends: **state** (Mongo), **queue** (Redis Streams), and **artifacts** (S3/MinIO). Worker and dispatcher process design is paused pending real-runtime learnings (a real LLM on the GPU node, skills enumeration). 92 tests green, lint/format/pyright clean.
 
 ---
 
-## Hardware & topology
+## Hardware & topology (reference deployment)
 
-| Node | Role | Current spec | Storage today | Storage planned |
-|---|---|---|---|---|
-| **Mac mini M4 Pro** | control plane | 64 GB unified | 512 GB internal | + 2 TB external TB4 (Zike enclosure) |
-| **DGX Spark** | GPU + artifact store | 128 GB unified | 4 TB internal NVMe (root) | unchanged |
+| Node | Role | Spec | Storage |
+|---|---|---|---|
+| **control node** | API + state plane | ~64 GB RAM, ARM | internal NVMe (DBs only) + optional external SSD (models, Docker, caches) |
+| **GPU node** | GPU + artifact store | ~128 GB RAM, NVIDIA GPU | ~4 TB internal NVMe (MinIO + model weights) |
 
-What runs where (today):
+What runs where:
 
-- **Mac mini**: MongoDB (brew services), Redis (brew services), Spindle dev/test loop. *Eventually*: FastAPI gateway, control-side dispatcher, MLX-served text models.
-- **Spark**: MinIO (Docker container, healthy, restart=unless-stopped). *Eventually*: GPU-side dispatcher, image/video workers (ComfyUI/diffusers).
+- **control node**: MongoDB, Redis, Spindle dev/test loop. *Eventually*: FastAPI gateway, control-side dispatcher, text models (MLX / llama.cpp / etc.).
+- **GPU node**: MinIO (Docker container, healthy, restart=unless-stopped). *Eventually*: GPU-side dispatcher, image/video workers (ComfyUI / diffusers).
 
 Reachability:
-- Mac mini → Spark via `spark-8b16:9000` (S3 API), `spark-8b16:9001` (web console). mDNS-resolved, LAN-only.
-- SSH alias `spark` → `saarang@spark-8b16` with `~/.ssh/id_ed25519`.
+- control → GPU via `<gpu-host>:9000` (S3 API), `<gpu-host>:9001` (MinIO web console). LAN-only, mDNS-resolved.
+- SSH alias `gpu` (or whatever you set in `~/.ssh/config`) for orchestration.
 
 Storage policy (locked):
-- **DBs (Mongo, future ClickHouse)** stay on **Mac mini internal NVMe**. External drives = unstable for state stores.
-- **Artifacts** live on **Spark MinIO** (4 TB available, room to grow).
-- **2 TB external** on Mac mini = models, Docker images, caches, experiments, periodic DB backups. Replaceable stuff only.
+- **DBs (Mongo, future ClickHouse)** stay on the **control node's internal NVMe**. External drives can disconnect; state stores can't tolerate that.
+- **Artifacts** live on **GPU node MinIO** (largest disk, where outputs are produced).
+- **External SSD on control node** (if attached) = models, Docker images, caches, experiments, periodic DB backups. Replaceable stuff only.
 
 ---
 
@@ -37,7 +37,7 @@ Storage policy (locked):
 ```
 client → FastAPI (:8080) ─► Mongo (:27017)        ← state of truth
                           ├► Redis (:6379)         ← per-config job streams
-                          └► MinIO @ Spark (:9000) ← artifact bytes (S3-compatible)
+                          └► MinIO @ GPU node (:9000) ← artifact bytes (S3-compatible)
 
 dispatcher (one per node)
   reserves from queue → atomic lease via Mongo CAS → dispatches to local worker
@@ -86,14 +86,14 @@ Full design rationale: [`ARCHITECTURE.md`](./ARCHITECTURE.md). Phased build plan
 ### `infra/`
 
 - **`infra/minio/`** — Docker compose service + idempotent bootstrap script + README
-  - Running on Spark, healthy, restart=unless-stopped
-  - Credentials in `infra/minio/.env` on Spark (gitignored, persists across reboots)
+  - Running on the GPU node, healthy, restart=unless-stopped
+  - Credentials in `infra/minio/.env` on the GPU node (gitignored, persists across reboots)
 
 ### Repo / quality
 
 - uv workspace at root, `pyproject.toml` configured for ruff + pyright + pytest
 - LICENSE (Apache 2.0), .gitignore, .env.example, .env (local, gitignored)
-- 65 tests passing across types + state + queue + configs
+- 92 tests passing across types + state + queue + configs + artifacts
 - `ruff check` clean, `ruff format --check` clean, `pyright` 0 errors
 - All component PLAN.md files written (api, dispatcher, workers, cli, infra)
 
@@ -101,13 +101,10 @@ Full design rationale: [`ARCHITECTURE.md`](./ARCHITECTURE.md). Phased build plan
 
 ## In flight 🚧
 
-| Track | Owner | Status |
-|---|---|---|
-| `core/artifacts/` impl (S3 via aioboto3) | this thread | next session, scoped + designed |
-| `Worker` + `ArtifactMeta` types in `core` | this thread | bundled with artifacts impl |
-| StateStore artifact methods | this thread | bundled with artifacts impl |
-| Qwen on Spark (learn caching, runtime shape) | you | active |
-| CPU "skill" enumeration | a separate agent | active |
+| Track | Status |
+|---|---|
+| Real LLM running on GPU node (learn caching, runtime shape) | active |
+| CPU "skill" enumeration (separate agent) | active |
 
 ---
 
@@ -115,31 +112,30 @@ Full design rationale: [`ARCHITECTURE.md`](./ARCHITECTURE.md). Phased build plan
 
 In rough dependency order:
 
-1. **`core/artifacts/` + Worker/Artifact types** (immediate next chunk)
-2. **API** (`api/PLAN.md`) — FastAPI gateway, idempotency, lifecycle endpoints. Doesn't depend on workers.
-3. **Dispatcher** (`dispatcher/PLAN.md`) — tick loop, scoring, sweepers, IPC client. Doesn't depend on workers.
-4. **Worker base + `cpu_echo`** (`workers/PLAN.md`) — paused; resumes after Qwen + skills agent inform shape.
-5. **CLI** (`cli/PLAN.md`) — thin Typer wrapper over API.
-6. **Real workers** — MLX text, ComfyUI image/video, CPU pools, external API. Phase 6.
-7. **Eval / replay primitives** — shard, replay, score, compare. Phase 7.
-8. **ClickHouse telemetry** — async event mirror from state. Phase 8.
-9. **Web UI** — far future, optional.
+1. **API** (`api/PLAN.md`) — FastAPI gateway, idempotency, lifecycle endpoints. Doesn't depend on workers.
+2. **Dispatcher** (`dispatcher/PLAN.md`) — tick loop, scoring, sweepers, IPC client. Doesn't depend on workers.
+3. **Worker base + `cpu_echo`** (`workers/PLAN.md`) — paused; resumes after real-runtime + skills-agent learnings inform shape.
+4. **CLI** (`cli/PLAN.md`) — thin Typer wrapper over API.
+5. **Real workers** — text (MLX/llama.cpp/etc.), ComfyUI image/video, CPU pools, external API. Phase 6.
+6. **Eval / replay primitives** — shard, replay, score, compare. Phase 7.
+7. **ClickHouse telemetry** — async event mirror from state. Phase 8.
+8. **Web UI** — far future, optional.
 
 ---
 
 ## Open decisions / parking lot
 
-Items I've flagged that haven't been answered or that we've explicitly punted:
+Items flagged but not yet answered or explicitly punted:
 
 | Decision | Status | Notes |
 |---|---|---|
-| Worker process structure (one-config GPU vs many-config CPU pool) | **paused** | Resume after Qwen + skills agent. Schema slot for `Worker.config_ids: list[str]` is locked. |
+| Worker process structure (one-config GPU vs many-config CPU pool) | **paused** | Resume after real-runtime + skills agent. Schema slot for `Worker.config_ids: list[str]` is locked. |
 | `Worker.current_job_ids` field | **dropped** | Volatile state; query `jobs` collection on demand instead |
 | Per-job-type input/output schemas | deferred | Lives in `api/` when we build it; conventions documented |
 | `runtime_backend` as enum vs string | leaned enum, not yet enforced | Cosmetic, can change anytime |
 | `Workflow` model stub | not yet added | Schema slot easy to add later |
 | Worker registration: file + API or one of them | leaned both | Decide when worker impl resumes |
-| Bucket auto-create in S3ArtifactStore | yes (will implement) | One env var wrong → fail loud |
+| Bucket auto-create in S3ArtifactStore | done | Lazy on first put, idempotent |
 | ClickHouse retention policy | deferred to Phase 8 | |
 | Per-config concurrency caps | deferred | Currently shared per worker |
 | YAML-as-source-of-truth for ModelConfig | deferred to CLI (Phase 5) | `spindle config apply` flow |
@@ -148,14 +144,14 @@ Items I've flagged that haven't been answered or that we've explicitly punted:
 
 ## Open services / running state
 
-Right now (Mac mini):
+control node:
 ```
 brew services list
-# mongodb-community  started   ~/Library/.../mongodb-community.plist
-# redis              started   ~/Library/.../redis.plist
+# mongodb-community  started
+# redis              started
 ```
 
-Right now (Spark, via `ssh spark`):
+GPU node (via SSH):
 ```
 docker ps
 # spindle-minio  Up <since bootstrap>  0.0.0.0:9000->9000/tcp, 0.0.0.0:9001->9001/tcp
@@ -163,24 +159,24 @@ docker ps
 
 To bring the dev environment up from cold:
 ```bash
-# Mac mini
+# control node
 brew services start mongodb-community@7.0
 brew services start redis
 
-# Spark (already running, but to restart)
-ssh spark 'cd ~/Documents/spindle/infra/minio && docker compose up -d'
+# GPU node (already running, but to restart)
+ssh <gpu-host> 'cd ~/spindle/infra/minio && docker compose up -d'
 
 # verify
 mongosh --eval "db.runCommand({ping:1}).ok"           # → 1
 redis-cli ping                                          # → PONG
-curl -fsS http://spark-8b16:9000/minio/health/live -o /dev/null -w "%{http_code}\n"   # → 200
+curl -fsS http://<gpu-host>:9000/minio/health/live -o /dev/null -w "%{http_code}\n"   # → 200
 ```
 
 To run all tests:
 ```bash
-cd /Users/saarangsrinivasan/Documents/spindle
+cd ~/spindle
 uv sync --all-packages --all-extras
-uv run pytest core/tests             # → 65 passed
+uv run pytest core/tests             # → 92 passed
 uv run --with ruff ruff check .      # → clean
 uv run --with pyright pyright        # → 0 errors
 ```
@@ -191,10 +187,10 @@ uv run --with pyright pyright        # → 0 errors
 
 | Secret | Location | Notes |
 |---|---|---|
-| MinIO root user / password | `~/Documents/spindle/infra/minio/.env` (Spark, gitignored) | also in `.env` on Mac mini for spindle to use |
-| Local MongoDB | none (auth disabled, localhost-only) | enable when LAN-exposing for DGX worker eventually |
+| MinIO root user / password | `~/spindle/infra/minio/.env` on the GPU node (gitignored) | also in `.env` on the control node for Spindle to use |
+| Local MongoDB | none (auth disabled, localhost-only) | enable when LAN-exposing |
 | Local Redis | none (no requirepass, localhost-only) | same |
-| GitHub | `gh` CLI, keychain (Mac) and keyring (Spark) | |
+| GitHub | `gh` CLI keychain | |
 
 ---
 

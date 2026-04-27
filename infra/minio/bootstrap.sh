@@ -94,8 +94,8 @@ done
 
 CONSOLE_PORT="$(grep '^MINIO_CONSOLE_PORT=' "$ENV_FILE" | cut -d= -f2)"
 
-# Try to print a useful hostname. On Mac, hostname might be e.g. "mac-mini.local";
-# on Linux "spark", etc. Falls back to localhost.
+# Try to print a useful hostname for cross-node access. mDNS resolves
+# "<hostname>.local" on most LANs. Falls back to localhost.
 HOST_HINT="$(hostname 2>/dev/null || echo localhost)"
 
 cat <<EOF

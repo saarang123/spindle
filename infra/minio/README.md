@@ -12,9 +12,9 @@ bootstrap.sh     idempotent setup: data dir, credentials, container start
 
 ## Running it
 
-### Mac mini (dev)
+### Local dev (control node)
 
-You need Docker Desktop installed. Then:
+You need Docker (Desktop on macOS, Engine on Linux). Then:
 
 ```bash
 cd infra/minio
@@ -32,23 +32,22 @@ To override:
 MINIO_DATA_DIR=/some/other/path ./bootstrap.sh
 ```
 
-### DGX Spark (prod)
+### Production (GPU node, where the big disk lives)
 
-You need Docker installed:
+Install Docker if not already there:
 ```bash
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker "$USER"  # then re-login so you don't need sudo
 ```
 
-Then clone the repo and run:
+Clone the repo and run the bootstrap pointed at your big SSD:
 ```bash
-cd ~/Documents
-git clone git@github.com:saarang123/spindle.git    # if not already cloned
+cd ~ && git clone git@github.com:saarang123/spindle.git
 cd spindle/infra/minio
-MINIO_DATA_DIR=/mnt/spindle-artifacts ./bootstrap.sh
+MINIO_DATA_DIR=/path/to/big/ssd ./bootstrap.sh
 ```
 
-(Pick whatever path on the 4TB SSD; that's what you want backing the bytes.)
+(Pick a path on whatever disk you want backing the bytes — typically your largest NVMe.)
 
 The script auto-restarts the container on host reboot (`restart: unless-stopped` in compose). No systemd unit needed.
 
@@ -76,7 +75,7 @@ Once Spindle's S3 artifact backend lands (next iteration), set in your root `.en
 
 ```bash
 SPINDLE_ARTIFACT_BACKEND=s3
-SPINDLE_S3_ENDPOINT=http://localhost:9000           # or http://spark.local:9000 from another node
+SPINDLE_S3_ENDPOINT=http://localhost:9000           # or http://<gpu-host>:9000 from another node
 SPINDLE_S3_BUCKET=spindle-artifacts
 SPINDLE_S3_ACCESS_KEY=...                            # from infra/minio/.env (MINIO_ROOT_USER)
 SPINDLE_S3_SECRET_KEY=...                            # from infra/minio/.env (MINIO_ROOT_PASSWORD)

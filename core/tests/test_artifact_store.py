@@ -1,8 +1,8 @@
 """ArtifactStore conformance suite.
 
 Parametrized over [memory, s3]. Memory always runs; S3 runs against a real
-MinIO if SPINDLE_S3_SECRET_KEY is set in the environment (it is, in our
-local .env pointing at Spark).
+MinIO if SPINDLE_S3_SECRET_KEY is set in the environment (loaded from .env
+by conftest if present).
 """
 
 from __future__ import annotations

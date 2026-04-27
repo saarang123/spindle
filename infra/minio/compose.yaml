@@ -3,9 +3,9 @@
 # (Docker Engine).
 #
 # Deployment targets:
-#   - DEV:  Mac mini, MINIO_DATA_DIR=~/spindle/minio-data
-#   - PROD: Spark,    MINIO_DATA_DIR=/mnt/spindle-artifacts (or wherever the
-#                                                            4TB SSD lives)
+#   - DEV:  control node, MINIO_DATA_DIR=~/spindle/minio-data
+#   - PROD: GPU node,     MINIO_DATA_DIR=/path/to/large/ssd (whatever disk
+#                                                            backs the bytes)
 #
 # Use `bootstrap.sh` to first-time-init creds + data dir, then `docker compose
 # up -d` to start. Re-running bootstrap.sh is safe (idempotent).

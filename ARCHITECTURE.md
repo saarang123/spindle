@@ -31,27 +31,27 @@ Three things are intentionally swappable behind protocols: the **state store**, 
 
 ## 2. Topology
 
-The reference deployment is **Mac mini control + DGX Spark GPU**, but no code hardcodes that. Nodes are arbitrary strings; capabilities and resource pools do the work.
+The reference deployment is a **control node + GPU node**, but no code hardcodes that. Nodes are arbitrary strings; capabilities and resource pools do the work.
 
 ```
-┌─────────────────── control node (e.g. mac-mini) ───────────────────┐
+┌─────────────────── control node (~64 GB RAM) ──────────────────────┐
 │  FastAPI gateway        :8080 (LAN-bound)                          │
 │  MongoDB                :27017 (LAN-bound, auth required)          │
 │  Redis                  :6379  (LAN-bound, auth required)          │
 │  ClickHouse             :8123  (LAN-bound)             [later]     │
 │  control-dispatcher     (one process)                              │
-│  text worker            (MLX / llama.cpp)                          │
+│  text worker            (MLX / llama.cpp / etc.)                   │
 │  cpu worker pool        (ffmpeg, external API jobs)                │
 └─────────────────────────────────────────────────────────────────────┘
                                 │  ethernet LAN
                                 │  mDNS or /etc/hosts
                                 ▼
-┌──────────────── gpu node (e.g. dgx-spark) ─────────────────────────┐
+┌─────────────────── GPU node (~128 GB RAM) ─────────────────────────┐
 │  gpu-dispatcher         (one process)                              │
 │  image worker           (diffusers / comfy client)                 │
 │  video worker           (comfy / CLI client)                       │
-│  /mnt/artifacts         4TB local disk, served via tiny HTTP       │
-│                         endpoint or NFS to control node            │
+│  MinIO :9000            S3-compatible artifact store               │
+│                         backed by local NVMe                       │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 

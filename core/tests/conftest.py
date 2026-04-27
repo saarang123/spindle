@@ -4,10 +4,10 @@ State tests require a running MongoDB. Queue tests run against memory and
 (if available) a real Redis. Artifact tests run against memory and a real
 MinIO/S3 (via SPINDLE_S3_*).
 
-Defaults assume:
-    brew services start mongodb-community@7.0
+Defaults assume local services on the control node:
+    brew services start mongodb-community@7.0   # macOS
     brew services start redis
-    MinIO running on Spark (or any S3-compatible endpoint)
+    docker compose -f infra/minio/compose.yaml up -d   # MinIO on localhost
 
 Override via SPINDLE_TEST_MONGO_URL / SPINDLE_TEST_REDIS_URL / SPINDLE_S3_*.
 """
@@ -38,7 +38,7 @@ from spindle_core.state.mongo import MongoStateStore  # noqa: E402
 
 _MONGO_URL = os.environ.get("SPINDLE_TEST_MONGO_URL", "mongodb://localhost:27017")
 _REDIS_URL = os.environ.get("SPINDLE_TEST_REDIS_URL", "redis://localhost:6379/15")
-_S3_ENDPOINT = os.environ.get("SPINDLE_S3_ENDPOINT", "http://spark-8b16:9000")
+_S3_ENDPOINT = os.environ.get("SPINDLE_S3_ENDPOINT", "http://localhost:9000")
 _S3_BUCKET = os.environ.get("SPINDLE_S3_BUCKET", "spindle-artifacts")
 _S3_ACCESS_KEY = os.environ.get("SPINDLE_S3_ACCESS_KEY", "spindle")
 _S3_SECRET_KEY = os.environ.get("SPINDLE_S3_SECRET_KEY", "")
