@@ -23,6 +23,7 @@ from pymongo.errors import DuplicateKeyError
 from spindle_core._time import utcnow
 from spindle_core.state._serialization import from_doc, to_doc
 from spindle_core.state.protocol import IdempotencyConflictError
+from spindle_core.types.artifact import ArtifactMeta
 from spindle_core.types.config import ModelConfig
 from spindle_core.types.events import JobEvent
 from spindle_core.types.job import Job, JobStatus
@@ -72,6 +73,7 @@ class MongoStateStore:
         self.jobs: AsyncIOMotorCollection = self._db["jobs"]
         self.events: AsyncIOMotorCollection = self._db["job_events"]
         self.configs: AsyncIOMotorCollection = self._db["model_configs"]
+        self.artifacts: AsyncIOMotorCollection = self._db["artifacts"]
         self._validate_on_read = validate_on_read
 
     # ─── lifecycle ───────────────────────────────────────────────────
@@ -109,6 +111,8 @@ class MongoStateStore:
             [("preferred_node", ASCENDING), ("is_active", ASCENDING)],
             name="preferred_node_is_active",
         )
+        # Artifacts: per-job listing is the primary query.
+        await self.artifacts.create_index([("job_id", ASCENDING)], name="job_id")
 
     def close(self) -> None:
         self._client.close()
@@ -327,13 +331,32 @@ class MongoStateStore:
         result = await self.configs.delete_one({"_id": config_id})
         return result.deleted_count == 1
 
+    # ─── artifacts ───────────────────────────────────────────────────
+
+    async def record_artifact(self, art: ArtifactMeta) -> ArtifactMeta:
+        await self.artifacts.insert_one(to_doc(art))
+        return art
+
+    async def get_artifact(self, artifact_id: UUID) -> ArtifactMeta | None:
+        doc = await self.artifacts.find_one({"_id": artifact_id})
+        return from_doc(ArtifactMeta, doc, validate=self._validate_on_read) if doc else None
+
+    async def list_artifacts_for_job(self, job_id: UUID) -> list[ArtifactMeta]:
+        cursor = self.artifacts.find({"job_id": job_id})
+        return [from_doc(ArtifactMeta, d, validate=self._validate_on_read) async for d in cursor]
+
+    async def delete_artifact(self, artifact_id: UUID) -> bool:
+        result = await self.artifacts.delete_one({"_id": artifact_id})
+        return result.deleted_count == 1
+
     # ─── test/admin helpers ──────────────────────────────────────────
 
     async def _drop_all(self) -> None:
-        """Test-only. Drops jobs + events + configs collections."""
+        """Test-only. Drops all collections."""
         await self.jobs.drop()
         await self.events.drop()
         await self.configs.drop()
+        await self.artifacts.drop()
 
 
 __all__ = ["MongoStateStore"]

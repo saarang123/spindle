@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
+from spindle_core.types.artifact import ArtifactMeta
 from spindle_core.types.config import ModelConfig
 from spindle_core.types.events import JobEvent
 from spindle_core.types.job import Job, JobStatus
@@ -147,6 +148,26 @@ class StateStore(Protocol):
 
     async def delete_config(self, config_id: str) -> bool:
         """Hard delete a config. Returns True if it existed."""
+        ...
+
+    # ─── artifacts ───────────────────────────────────────────────────
+
+    async def record_artifact(self, art: ArtifactMeta) -> ArtifactMeta:
+        """Persist artifact metadata. The bytes themselves live in an
+        ArtifactStore; this records the pointer + dimensions/lineage.
+        """
+        ...
+
+    async def get_artifact(self, artifact_id: UUID) -> ArtifactMeta | None: ...
+
+    async def list_artifacts_for_job(self, job_id: UUID) -> list[ArtifactMeta]:
+        """Artifacts produced by (or attached to) `job_id`. Excludes orphans."""
+        ...
+
+    async def delete_artifact(self, artifact_id: UUID) -> bool:
+        """Delete the metadata record only. Caller is responsible for deleting
+        bytes via ArtifactStore.delete(uri) — the StateStore does NOT manage
+        the byte lifecycle."""
         ...
 
 

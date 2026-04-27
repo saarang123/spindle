@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,6 +31,7 @@ class Settings(BaseSettings):
     # ─── backend selection ───────────────────────────────────────────
     state_backend: Literal["mongo"] = "mongo"
     queue_backend: Literal["redis", "memory"] = "redis"
+    artifact_backend: Literal["s3", "memory"] = "s3"
 
     # ─── mongo ───────────────────────────────────────────────────────
     mongo_url: str = "mongodb://localhost:27017"
@@ -45,6 +47,13 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     redis_queue_prefix: str = "spindle:queue"
     redis_consumer_group: str = "dispatchers"
+
+    # ─── s3 / minio ──────────────────────────────────────────────────
+    s3_endpoint: str = "http://localhost:9000"
+    s3_bucket: str = "spindle-artifacts"
+    s3_access_key: SecretStr = SecretStr("")
+    s3_secret_key: SecretStr = SecretStr("")
+    s3_region: str = "us-east-1"
 
     # ─── logging ─────────────────────────────────────────────────────
     log_level: str = "INFO"

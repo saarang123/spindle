@@ -9,6 +9,7 @@ dependencies = [
   "pydantic-settings>=2.4",
   "motor>=3.5",
   "redis>=5.0",
+  "aioboto3>=13.0",
 ]
 
 [project.optional-dependencies]

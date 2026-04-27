@@ -1,31 +1,48 @@
 """Shared test fixtures.
 
 State tests require a running MongoDB. Queue tests run against memory and
-(if available) a real Redis. Both default to localhost; override via
-SPINDLE_TEST_MONGO_URL / SPINDLE_TEST_REDIS_URL.
+(if available) a real Redis. Artifact tests run against memory and a real
+MinIO/S3 (via SPINDLE_S3_*).
 
-Local dev:
+Defaults assume:
     brew services start mongodb-community@7.0
     brew services start redis
+    MinIO running on Spark (or any S3-compatible endpoint)
+
+Override via SPINDLE_TEST_MONGO_URL / SPINDLE_TEST_REDIS_URL / SPINDLE_S3_*.
 """
 
 from __future__ import annotations
 
 import os
 from collections.abc import AsyncIterator
+from pathlib import Path
 from uuid import uuid4
 
 import pytest_asyncio
+from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 from redis.asyncio import Redis
 
-from spindle_core.queue.memory import MemoryJobQueue
-from spindle_core.queue.protocol import JobQueue
-from spindle_core.queue.redis_streams import RedisStreamsQueue
-from spindle_core.state.mongo import MongoStateStore
+# Load .env at the repo root so SPINDLE_S3_* etc. are visible to tests.
+# Existing env vars win (so CI / local overrides aren't trampled).
+load_dotenv(Path(__file__).parent.parent.parent / ".env", override=False)
+
+from spindle_core.artifacts.memory import MemoryArtifactStore  # noqa: E402
+from spindle_core.artifacts.protocol import ArtifactStore  # noqa: E402
+from spindle_core.artifacts.s3 import S3ArtifactStore  # noqa: E402
+from spindle_core.queue.memory import MemoryJobQueue  # noqa: E402
+from spindle_core.queue.protocol import JobQueue  # noqa: E402
+from spindle_core.queue.redis_streams import RedisStreamsQueue  # noqa: E402
+from spindle_core.state.mongo import MongoStateStore  # noqa: E402
 
 _MONGO_URL = os.environ.get("SPINDLE_TEST_MONGO_URL", "mongodb://localhost:27017")
 _REDIS_URL = os.environ.get("SPINDLE_TEST_REDIS_URL", "redis://localhost:6379/15")
+_S3_ENDPOINT = os.environ.get("SPINDLE_S3_ENDPOINT", "http://spark-8b16:9000")
+_S3_BUCKET = os.environ.get("SPINDLE_S3_BUCKET", "spindle-artifacts")
+_S3_ACCESS_KEY = os.environ.get("SPINDLE_S3_ACCESS_KEY", "spindle")
+_S3_SECRET_KEY = os.environ.get("SPINDLE_S3_SECRET_KEY", "")
+_S3_REGION = os.environ.get("SPINDLE_S3_REGION", "us-east-1")
 
 
 @pytest_asyncio.fixture
@@ -70,3 +87,49 @@ async def job_queue(request) -> AsyncIterator[JobQueue]:  # type: ignore[no-unty
         async for key in client.scan_iter(f"spindle_test:{suffix}:*"):
             await client.delete(key)
         await client.aclose()
+
+
+# ─── artifact store ─────────────────────────────────────────────────
+
+
+@pytest_asyncio.fixture(params=["memory", "s3"])
+async def artifact_store(request) -> AsyncIterator[ArtifactStore]:  # type: ignore[no-untyped-def]
+    backend = request.param
+    if backend == "memory":
+        yield MemoryArtifactStore()
+        return
+
+    # S3 via the live MinIO. Each test gets a unique key prefix; teardown
+    # deletes only those keys (cheap; doesn't touch other tests' data).
+    if not _S3_SECRET_KEY:
+        import pytest
+
+        pytest.skip("SPINDLE_S3_SECRET_KEY unset — skipping live S3 tests")
+
+    store = S3ArtifactStore(
+        endpoint=_S3_ENDPOINT,
+        bucket=_S3_BUCKET,
+        access_key=_S3_ACCESS_KEY,
+        secret_key=_S3_SECRET_KEY,
+        region=_S3_REGION,
+    )
+    prefix = f"_test/{uuid4().hex[:12]}/"
+    # Stash on the instance so tests can scope their keys.
+    store._test_prefix = prefix  # type: ignore[attr-defined]
+    try:
+        yield store
+    finally:
+        # Best-effort cleanup: list and delete everything under our prefix.
+        try:
+            async with store._client() as s3:
+                paginator = s3.get_paginator("list_objects_v2")
+                async for page in paginator.paginate(Bucket=store._bucket, Prefix=prefix):
+                    contents = page.get("Contents") or []
+                    if not contents:
+                        continue
+                    await s3.delete_objects(
+                        Bucket=store._bucket,
+                        Delete={"Objects": [{"Key": o["Key"]} for o in contents]},
+                    )
+        except Exception:  # pragma: no cover — teardown should never fail tests
+            pass
