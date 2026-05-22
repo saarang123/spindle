@@ -17,23 +17,21 @@ workers:
   # If `python:` is omitted the supervisor uses sys.executable (shared venv).
 
   - name: audio-tts-f5
-    module: spindle_workers.audio_tts
-    # python: ~/envs/f5-tts/bin/python    # dedicated venv (uncomment to use)
+    module: spindle_workers.audio_tts.f5      # f5 subpackage not built yet in v0
+    # python: ~/envs/f5-tts/bin/python        # dedicated venv (uncomment to use)
     replicas: 1
     env:
       SPINDLE_WORKER_CONFIG_ID: audio-tts-f5-v1
-      SPINDLE_TTS_BACKEND: f5
     restart:
       policy: always
       backoff_s: [1, 2, 4, 8, 30]
 
   - name: audio-tts-kokoro
-    module: spindle_workers.audio_tts
-    # python: ~/envs/kokoro/bin/python    # dedicated venv (uncomment to use)
+    module: spindle_workers.audio_tts.kokoro
+    # python: ~/envs/kokoro/bin/python        # dedicated venv (uncomment to use)
     replicas: 1
     env:
       SPINDLE_WORKER_CONFIG_ID: audio-tts-kokoro-v1
-      SPINDLE_TTS_BACKEND: kokoro
     restart:
       policy: always
       backoff_s: [1, 2, 4, 8, 30]

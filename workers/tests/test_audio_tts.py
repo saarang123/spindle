@@ -1,4 +1,4 @@
-"""AudioTtsWorker tests."""
+"""AudioTtsWorker + backend tests."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,6 +12,7 @@ from spindle_workers.audio_tts.backends._util import (
 )
 from spindle_workers.audio_tts.backends.base import SAMPLE_RATE, BaseTTS, Voice
 from spindle_workers.audio_tts.backends.openai import OpenAITTS
+from spindle_workers.audio_tts.openai import OpenAITtsWorker
 from spindle_workers.audio_tts.worker import AudioTtsWorker
 from spindle_workers.base import WorkerConfig
 
@@ -22,6 +23,9 @@ def _set_env(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SPINDLE_LOGS_DIR", str(tmp_path / "logs"))
     monkeypatch.setenv("SPINDLE_WORKER_REGISTRY_DIR", str(tmp_path / "registry"))
     monkeypatch.setenv("OPENAI_API_KEY", "sk-fake-for-tests")
+
+
+# ---------- shared helpers / backends ----------
 
 
 def test_base_class_defaults() -> None:
@@ -69,27 +73,53 @@ def test_concat_wav_single_passthrough() -> None:
     assert concat_wav([payload]) == payload
 
 
-def test_audio_tts_worker_requires_backend_env(monkeypatch, tmp_path: Path) -> None:
-    _set_env(monkeypatch, tmp_path)
-    monkeypatch.delenv("SPINDLE_TTS_BACKEND", raising=False)
-    cfg = WorkerConfig.from_env()
-    with pytest.raises(SystemExit, match="SPINDLE_TTS_BACKEND"):
-        AudioTtsWorker(cfg)
+# ---------- worker hierarchy ----------
 
 
-def test_audio_tts_worker_loads_openai_backend(monkeypatch, tmp_path: Path) -> None:
+def test_audio_tts_worker_is_abstract_without_backend_name(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """AudioTtsWorker raises if instantiated without a subclass setting backend_name."""
     _set_env(monkeypatch, tmp_path)
-    monkeypatch.setenv("SPINDLE_TTS_BACKEND", "openai")
     cfg = WorkerConfig.from_env()
-    worker = AudioTtsWorker(cfg)
-    assert worker._backend_name == "openai"
+
+    class _NoBackend(AudioTtsWorker):
+        # intentionally does not set backend_name
+        def _make_backend(self):
+            raise NotImplementedError
+
+    with pytest.raises(SystemExit, match="backend_name is empty"):
+        _NoBackend(cfg)
+
+
+def test_openai_tts_worker_boots(monkeypatch, tmp_path: Path) -> None:
+    _set_env(monkeypatch, tmp_path)
+    cfg = WorkerConfig.from_env()
+    worker = OpenAITtsWorker(cfg)
+    assert worker.backend_name == "openai"
+    assert worker.capabilities == ["audio.tts"]
     assert isinstance(worker._tts, BaseTTS)
+
+
+def test_kokoro_tts_worker_boots(monkeypatch, tmp_path: Path) -> None:
+    pytest.importorskip(
+        "kokoro",
+        reason="kokoro not installed (skip if missing audio_tts_kokoro extra)",
+    )
+    from spindle_workers.audio_tts.kokoro import KokoroTtsWorker
+
+    _set_env(monkeypatch, tmp_path)
+    cfg = WorkerConfig.from_env()
+    worker = KokoroTtsWorker(cfg)
+    assert worker.backend_name == "kokoro"
     assert worker.capabilities == ["audio.tts"]
 
 
-def test_audio_tts_worker_unknown_backend_exits(monkeypatch, tmp_path: Path) -> None:
-    _set_env(monkeypatch, tmp_path)
-    monkeypatch.setenv("SPINDLE_TTS_BACKEND", "espeak")
-    cfg = WorkerConfig.from_env()
-    with pytest.raises(SystemExit, match="not built yet"):
-        AudioTtsWorker(cfg)
+def test_kokoro_voices_list_without_install(monkeypatch) -> None:
+    pytest.importorskip("kokoro", reason="kokoro not installed")
+    from spindle_workers.audio_tts.backends.kokoro import KokoroTTS
+
+    tts = KokoroTTS()
+    voices = tts.list_voices()
+    assert any(v.id == "am_michael" for v in voices)
+    assert tts.sample_rate == 24_000

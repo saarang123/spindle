@@ -68,6 +68,24 @@ def concat_wav(wav_blobs: list[bytes]) -> bytes:
     return out.getvalue()
 
 
+def samples_to_wav(samples, sample_rate: int) -> bytes:
+    """Encode a 1-D float32 sample array in [-1, 1] as mono 16-bit WAV bytes.
+
+    ``samples`` is anything numpy-array-like (numpy is imported lazily so this
+    module stays importable without it).
+    """
+    import numpy as np
+
+    int_samples = (np.clip(samples, -1.0, 1.0) * 32767).astype(np.int16)
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sample_rate)
+        w.writeframes(int_samples.tobytes())
+    return out.getvalue()
+
+
 def wav_duration_seconds(wav_bytes: bytes) -> float:
     """Inspect a WAV blob and return its duration in seconds."""
     if not wav_bytes:

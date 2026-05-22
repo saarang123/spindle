@@ -1,15 +1,24 @@
-"""``AudioTtsWorker`` — first real (non-echo) worker.
+"""``AudioTtsWorker`` — abstract base for backend-specific TTS workers.
 
-Synthesizes ``job.input.text`` to a 24 kHz mono WAV via the backend selected
-by ``SPINDLE_TTS_BACKEND``. v0 ships the ``openai`` backend only; ``f5`` and
-``kokoro`` arrive in a later phase (the backends are already specced and the
-code already exists in ``podcast-this/cli/podcast/tts/`` — just not migrated
-here yet).
+Per Spindle's "one worker module per runtime backend" convention, each TTS
+backend has its own concrete subclass and its own entry point:
+
+  python -m spindle_workers.audio_tts.openai → OpenAITtsWorker
+  python -m spindle_workers.audio_tts.kokoro → KokoroTtsWorker
+  python -m spindle_workers.audio_tts.f5     → F5TtsWorker (deferred)
+
+Subclasses set ``backend_name`` and implement ``_make_backend()``. The base
+class owns the shared job-execution path (input parsing, synthesize call,
+output shape) so every TTS backend produces uniform results.
+
+Different backends often need different deployment envs (CPU vs GPU,
+incompatible torch versions, different Python versions). Use
+``WorkerSpec.python`` in the runtime YAML to point each one at its own venv.
 """
 from __future__ import annotations
 
 import logging
-import os
+from abc import abstractmethod
 
 from spindle_core.types.job import Job
 
@@ -20,30 +29,26 @@ log = logging.getLogger("spindle_workers")
 
 
 class AudioTtsWorker(WorkerBase):
+    """Abstract base for TTS workers. Subclass and override
+    ``backend_name`` + ``_make_backend()``.
+    """
+
     capabilities = ["audio.tts"]
+    backend_name: str = ""  # concrete subclass MUST set
 
     def __init__(self, config: WorkerConfig) -> None:
         super().__init__(config)
-        backend_name = os.environ.get("SPINDLE_TTS_BACKEND")
-        if not backend_name:
+        if not self.backend_name:
             raise SystemExit(
-                "SPINDLE_TTS_BACKEND is required (one of: openai)"
+                f"{type(self).__name__}.backend_name is empty. Concrete "
+                f"subclass must set it (e.g. 'openai', 'kokoro')."
             )
-        self._backend_name = backend_name
-        self._tts: BaseTTS = self._load_backend(backend_name)
-        log.info("audio_tts backend=%s ready", backend_name)
+        self._tts = self._make_backend()
+        log.info("audio_tts backend=%s ready", self.backend_name)
 
-    @staticmethod
-    def _load_backend(name: str) -> BaseTTS:
-        if name == "openai":
-            from .backends.openai import OpenAITTS
-
-            return OpenAITTS()
-        # f5 / kokoro deferred until their migration from podcast-this.
-        raise SystemExit(
-            f"backend {name!r} not built yet in spindle-workers v0; "
-            f"only 'openai' is available."
-        )
+    @abstractmethod
+    def _make_backend(self) -> BaseTTS:
+        """Return the BaseTTS implementation for this subclass."""
 
     async def execute(self, job: Job, ctx: JobContext) -> JobResult:
         text = job.input["text"]
@@ -55,12 +60,12 @@ class AudioTtsWorker(WorkerBase):
         log.info("synth done bytes=%d", len(wav_bytes))
 
         # v0: no ArtifactWriter yet — return byte count + sample-rate metadata.
-        # When ArtifactWriter lands, this method writes WAV to MinIO and returns
-        # an ArtifactMeta in `artifacts`.
+        # When ArtifactWriter lands, this method writes WAV to MinIO and adds
+        # an ArtifactMeta to JobResult.artifacts.
         return JobResult(
             output={
                 "voice": voice or "default",
-                "backend": self._backend_name,
+                "backend": self.backend_name,
                 "char_count": len(text),
                 "wav_bytes": len(wav_bytes),
             },

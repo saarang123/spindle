@@ -13,14 +13,27 @@ shutdown_grace_seconds: 10
 
 workers:
   - name: audio-tts-openai
-    module: spindle_workers.audio_tts
+    module: spindle_workers.audio_tts.openai
     replicas: 4
     env:
       SPINDLE_WORKER_CONFIG_ID: audio-tts-openai-v1
-      SPINDLE_TTS_BACKEND: openai
     restart:
       policy: always
       backoff_s: [1, 2, 4, 8, 30]
+
+  # Kokoro-82M can also run on CPU. To test locally on the control node,
+  # uncomment the entry below AND provide a Python 3.12/3.13 venv at
+  # ~/envs/kokoro/bin/python (kokoro's transitive spacy dep doesn't ship
+  # 3.14 wheels):
+  #   uv venv --python 3.13 ~/envs/kokoro
+  #   ~/envs/kokoro/bin/pip install spindle-core spindle-workers[audio_tts_kokoro]
+  #
+  # - name: audio-tts-kokoro
+  #   module: spindle_workers.audio_tts.kokoro
+  #   python: ~/envs/kokoro/bin/python
+  #   replicas: 1
+  #   env:
+  #     SPINDLE_WORKER_CONFIG_ID: audio-tts-kokoro-v1
 
   # Future workers land here, e.g.:
   #
@@ -30,9 +43,3 @@ workers:
   #   env:
   #     SPINDLE_WORKER_CONFIG_ID: text-rewrite-claude-v1
   #     SPINDLE_LLM_BACKEND: claude
-  #
-  # - name: audio-stitch
-  #   module: spindle_workers.audio_stitch
-  #   replicas: 2
-  #   env:
-  #     SPINDLE_WORKER_CONFIG_ID: audio-stitch-v1
