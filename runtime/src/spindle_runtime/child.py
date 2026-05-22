@@ -42,6 +42,7 @@ class ChildProcess:
         logs_dir: Path,
         restart: RestartPolicy,
         ipc_socket_dir: Path = Path("/tmp"),
+        python: str | None = None,
     ) -> None:
         self.name = name
         self.worker_id = worker_id
@@ -51,6 +52,9 @@ class ChildProcess:
         self._logs_dir = Path(logs_dir)
         self._log_file = self._logs_dir / f"{worker_id}.log"
         self._ipc_socket = ipc_socket_dir / f"spindle-worker-{worker_id}.sock"
+        self._python = (
+            str(Path(python).expanduser()) if python else sys.executable
+        )
 
         self._proc: asyncio.subprocess.Process | None = None
         self._stopping = False
@@ -72,7 +76,7 @@ class ChildProcess:
 
         while not self._stopping:
             self._proc = await asyncio.create_subprocess_exec(
-                sys.executable, "-m", self.module,
+                self._python, "-m", self.module,
                 env=self._env_for_child(),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,

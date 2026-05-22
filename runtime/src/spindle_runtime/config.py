@@ -35,6 +35,9 @@ class WorkerSpec(BaseModel):
     replicas: int = Field(default=1, ge=1)
     env: dict[str, str] = Field(default_factory=dict)
     restart: RestartPolicy = Field(default_factory=RestartPolicy)
+    python: str | None = None  # Override interpreter. Path to a Python executable
+                                # (e.g. ~/envs/f5-tts/bin/python or a conda env's
+                                # python). None = use the supervisor's interpreter.
 
     @model_validator(mode="after")
     def _no_reserved_env(self) -> WorkerSpec:

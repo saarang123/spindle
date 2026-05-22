@@ -12,8 +12,13 @@ log_dir: ~/.spindle/logs
 shutdown_grace_seconds: 10
 
 workers:
+  # GPU workers can pin their own Python interpreter via `python:` — useful
+  # when models have incompatible torch / CUDA versions and need isolated envs.
+  # If `python:` is omitted the supervisor uses sys.executable (shared venv).
+
   - name: audio-tts-f5
     module: spindle_workers.audio_tts
+    # python: ~/envs/f5-tts/bin/python    # dedicated venv (uncomment to use)
     replicas: 1
     env:
       SPINDLE_WORKER_CONFIG_ID: audio-tts-f5-v1
@@ -24,6 +29,7 @@ workers:
 
   - name: audio-tts-kokoro
     module: spindle_workers.audio_tts
+    # python: ~/envs/kokoro/bin/python    # dedicated venv (uncomment to use)
     replicas: 1
     env:
       SPINDLE_WORKER_CONFIG_ID: audio-tts-kokoro-v1

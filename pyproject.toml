@@ -9,13 +9,13 @@ license = { text = "Apache-2.0" }
 package = false
 
 [tool.uv.workspace]
-members = ["core", "runtime"]
-# api, dispatcher, workers, cli will be added as they come online
+members = ["core", "runtime", "workers"]
+# api, dispatcher, cli will be added as they come online
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["core/src", "runtime/src"]
+src = ["core/src", "runtime/src", "workers/src"]
 
 [tool.ruff.lint]
 select = [
@@ -39,7 +39,7 @@ ignore = []
 quote-style = "double"
 
 [tool.pyright]
-include = ["core/src", "core/tests", "runtime/src", "runtime/tests"]
+include = ["core/src", "core/tests", "runtime/src", "runtime/tests", "workers/src", "workers/tests"]
 pythonVersion = "3.12"
 typeCheckingMode = "standard"
 reportMissingTypeStubs = false
@@ -48,7 +48,8 @@ reportMissingTypeStubs = false
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["core/tests", "runtime/tests"]
+testpaths = ["core/tests", "runtime/tests", "workers/tests"]
+importmode = "importlib"
 markers = [
   "integration: requires docker / external services",
 ]

@@ -32,6 +32,7 @@ class Supervisor:
                         env={**os.environ, **spec.env},
                         logs_dir=self.logs_dir,
                         restart=spec.restart,
+                        python=spec.python,
                     )
                 )
 
