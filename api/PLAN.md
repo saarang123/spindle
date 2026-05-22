@@ -309,6 +309,36 @@ GET /artifacts/{artifact_id}/bytes → 200 stream
 
 `/bytes` resolves the URI via the local `ArtifactStore` and streams it. If backend is `local` and the file is on this node, serve from disk. If backend is `http` (control node fetching from GPU), proxy the request.
 
+### ModelConfig admin
+
+Used by `spindle config apply` to seed configs at deploy time.
+
+```
+POST /configs
+Body:
+{
+  "id": "audio-tts-openai-v1",
+  "name": "OpenAI TTS (tts-1-hd)",
+  "version": "v1",
+  "job_types": ["audio.tts"],
+  "preferred_node": "control-node",
+  "runtime_backend": "openai",
+  "model_ref": "tts-1-hd",
+  "params": {"default_voice": "onyx"},
+  "is_active": true
+}
+→ 200 { "ok": true, "config_id": "audio-tts-openai-v1" }
+```
+
+Idempotent upsert (calls `state.upsert_config`).
+
+```
+GET /configs → 200 { "configs": [...] }
+GET /configs/{config_id} → 200 ModelConfig (or 404)
+```
+
+`GET /configs` accepts `?active_only=true&job_type=audio.tts` to filter.
+
 ## Auth
 
 Optional bearer token via `SPINDLE_API_AUTH_TOKEN`. If unset, all routes are open (LAN-only deployment). If set, every request must carry `Authorization: Bearer <token>`. `/health` is always open.

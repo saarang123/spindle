@@ -38,6 +38,11 @@ workers/
       __init__.py
       worker.py                           # CpuEchoWorker(WorkerBase)
       main.py                             # `python -m spindle_workers.cpu_echo`
+    audio_tts/                            # see ./audio_tts/PLAN.md
+      __init__.py
+      worker.py                           # AudioTtsWorker(WorkerBase)
+      main.py                             # `python -m spindle_workers.audio_tts`
+      backends/                           # BaseTTS + openai/f5/kokoro impls
   tests/
     test_ipc_server.py
     test_lease_extender.py
@@ -217,15 +222,22 @@ class CpuEchoWorker(WorkerBase):
 
 ## Running
 
-A worker process is started by:
+In production, workers are launched by the runtime supervisor (see [`../runtime/PLAN.md`](../runtime/PLAN.md)):
+
+```bash
+spindle workers run --config configs/runtime.<node>.yaml
+```
+
+For debugging or one-off runs, the same worker can be launched manually with the env vars the supervisor would inject:
 
 ```bash
 SPINDLE_WORKER_ID=control-echo-0 \
 SPINDLE_WORKER_CONFIG_ID=cpu-echo-v1 \
+SPINDLE_WORKER_IPC_SOCKET=/tmp/spindle-worker-control-echo-0.sock \
 uv run python -m spindle_workers.cpu_echo
 ```
 
-For Phase 6 real workers, similar entrypoints under `spindle_workers.text_mlx`, etc.
+This is identical to what the supervisor does internally, so the supervisor never becomes a debugging fog — bypass it any time. Real workers (`audio_tts`, future `text_mlx`, etc.) follow the same pattern.
 
 A `ModelConfig` for `cpu-echo-v1` should be seeded by infra startup (so the dispatcher knows about it). Seed JSON lives in `infra/seed/configs/cpu_echo.yaml` — loaded by an init script at compose-up time or a CLI command (`spindle config apply <yaml>`).
 
@@ -242,5 +254,5 @@ A `ModelConfig` for `cpu-echo-v1` should be seeded by infra startup (so the disp
 
 - Real model runtimes (MLX, ComfyUI, vLLM, ffmpeg, diffusers). Phase 6.
 - Worker-side queue consumption (workers never read from Redis directly).
-- Multi-config workers (one process = one config).
+- Multi-config workers in one process (one process = one config). Multiple processes of the *same* config are supported — that's the runtime supervisor's `replicas` field, not the worker's concern.
 - Hot reload of the worker config without restart.

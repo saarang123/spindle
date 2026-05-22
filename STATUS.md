@@ -5,7 +5,7 @@
 
 ## Where we are in one paragraph
 
-Spindle is in active build-out of `core/` (the foundation everyone else depends on). All three swap-point protocols are implemented and battle-tested against real backends: **state** (Mongo), **queue** (Redis Streams), and **artifacts** (S3/MinIO). Worker and dispatcher process design is paused pending real-runtime learnings (a real LLM on the GPU node, skills enumeration). 92 tests green, lint/format/pyright clean.
+Spindle is in active build-out of `core/` (the foundation everyone else depends on). All three swap-point protocols are implemented and battle-tested against real backends: **state** (Mongo), **queue** (Redis Streams), and **artifacts** (S3/MinIO). Worker process structure resolved (one process = one config, replicas via runtime supervisor); the first real workload — TTS for podcast-this — drives API + workers + runtime build-out next. 92 tests green, lint/format/pyright clean.
 
 ---
 
@@ -114,12 +114,13 @@ In rough dependency order:
 
 1. **API** (`api/PLAN.md`) — FastAPI gateway, idempotency, lifecycle endpoints. Doesn't depend on workers.
 2. **Dispatcher** (`dispatcher/PLAN.md`) — tick loop, scoring, sweepers, IPC client. Doesn't depend on workers.
-3. **Worker base + `cpu_echo`** (`workers/PLAN.md`) — paused; resumes after real-runtime + skills-agent learnings inform shape.
-4. **CLI** (`cli/PLAN.md`) — thin Typer wrapper over API.
-5. **Real workers** — text (MLX/llama.cpp/etc.), ComfyUI image/video, CPU pools, external API. Phase 6.
-6. **Eval / replay primitives** — shard, replay, score, compare. Phase 7.
-7. **ClickHouse telemetry** — async event mirror from state. Phase 8.
-8. **Web UI** — far future, optional.
+3. **Runtime supervisor** (`runtime/PLAN.md`) — new component. Per-node YAML-driven process supervisor; spawns + restarts workers.
+4. **Worker base + `cpu_echo` + `audio_tts`** (`workers/PLAN.md`, `workers/audio_tts/PLAN.md`) — unblocked. `audio_tts` (TTS for podcast-this) is the first real workload driving WorkerBase forward. Process structure resolved: one process = one config, replicas via runtime supervisor.
+5. **CLI** (`cli/PLAN.md`) — thin Typer wrapper over API.
+6. **Real workers (beyond audio_tts)** — text LLMs (MLX / llama.cpp / Claude / OpenAI), ComfyUI image/video, ffmpeg, audio_stitch. Phase 6.
+7. **Eval / replay primitives** — shard, replay, score, compare. Phase 7.
+8. **ClickHouse telemetry** — async event mirror from state. Phase 8.
+9. **Web UI** — far future, optional.
 
 ---
 
@@ -129,7 +130,7 @@ Items flagged but not yet answered or explicitly punted:
 
 | Decision | Status | Notes |
 |---|---|---|
-| Worker process structure (one-config GPU vs many-config CPU pool) | **paused** | Resume after real-runtime + skills agent. Schema slot for `Worker.config_ids: list[str]` is locked. |
+| Worker process structure (one-config GPU vs many-config CPU pool) | **resolved** | One process = one config. CPU pools achieved via N replicas in the runtime supervisor's YAML, not via multi-config in one process. See `runtime/PLAN.md`. |
 | `Worker.current_job_ids` field | **dropped** | Volatile state; query `jobs` collection on demand instead |
 | Per-job-type input/output schemas | deferred | Lives in `api/` when we build it; conventions documented |
 | `runtime_backend` as enum vs string | leaned enum, not yet enforced | Cosmetic, can change anytime |

@@ -110,6 +110,14 @@ Concrete workers subclass and implement `async def execute(job, ctx) -> WorkerOu
 
 Workers do not import from `dispatcher/` or `api/`. They depend on `core/` only.
 
+### `runtime/`
+
+Per-node worker supervisor. A small, platform-agnostic Python process that reads a YAML config listing local workers, spawns each as a subprocess (replicas N), restarts on crash with exponential backoff, forwards SIGTERM/SIGINT for clean shutdown. One supervisor per machine.
+
+Does not talk to Mongo / Redis / API. Only knows about OS processes. Workers are independent — they self-register, talk to the API directly. The supervisor's universe stops at "are my children alive?".
+
+Replaces the per-worker launchd / systemd unit files that would otherwise be needed.
+
 ### `cli/`
 
 Thin Typer-based CLI hitting the API. `spindle submit`, `spindle status`, `spindle workers`, `spindle cancel`. No business logic; all server-side.

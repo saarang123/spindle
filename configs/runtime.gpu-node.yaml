@@ -1,0 +1,41 @@
+# Runtime supervisor config for the GPU node (DGX Spark).
+#
+# Hosts GPU-bound workers: local TTS models, future image / video diffusion.
+# CPU-bound work (HTTP API clients) belongs on the control-node.
+#
+# Run with:
+#   spindle workers run --config configs/runtime.gpu-node.yaml
+#
+# See ../runtime/PLAN.md for the schema reference.
+node_id: gpu-node
+log_dir: ~/.spindle/logs
+shutdown_grace_seconds: 10
+
+workers:
+  - name: audio-tts-f5
+    module: spindle_workers.audio_tts
+    replicas: 1
+    env:
+      SPINDLE_WORKER_CONFIG_ID: audio-tts-f5-v1
+      SPINDLE_TTS_BACKEND: f5
+    restart:
+      policy: always
+      backoff_s: [1, 2, 4, 8, 30]
+
+  - name: audio-tts-kokoro
+    module: spindle_workers.audio_tts
+    replicas: 1
+    env:
+      SPINDLE_WORKER_CONFIG_ID: audio-tts-kokoro-v1
+      SPINDLE_TTS_BACKEND: kokoro
+    restart:
+      policy: always
+      backoff_s: [1, 2, 4, 8, 30]
+
+  # Future workers land here, e.g.:
+  #
+  # - name: image-comfy
+  #   module: spindle_workers.image_comfy
+  #   replicas: 1
+  #   env:
+  #     SPINDLE_WORKER_CONFIG_ID: image-sdxl-v1

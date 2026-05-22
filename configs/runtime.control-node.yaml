@@ -1,0 +1,38 @@
+# Runtime supervisor config for the control node (Mac mini).
+#
+# Hosts CPU-bound workers: HTTP API clients (OpenAI / Anthropic / etc.),
+# audio stitching, ffmpeg. Heavy GPU work belongs on the gpu-node.
+#
+# Run with:
+#   spindle workers run --config configs/runtime.control-node.yaml
+#
+# See ../runtime/PLAN.md for the schema reference.
+node_id: control-node
+log_dir: ~/.spindle/logs
+shutdown_grace_seconds: 10
+
+workers:
+  - name: audio-tts-openai
+    module: spindle_workers.audio_tts
+    replicas: 4
+    env:
+      SPINDLE_WORKER_CONFIG_ID: audio-tts-openai-v1
+      SPINDLE_TTS_BACKEND: openai
+    restart:
+      policy: always
+      backoff_s: [1, 2, 4, 8, 30]
+
+  # Future workers land here, e.g.:
+  #
+  # - name: text-rewrite-claude
+  #   module: spindle_workers.text_llm
+  #   replicas: 3
+  #   env:
+  #     SPINDLE_WORKER_CONFIG_ID: text-rewrite-claude-v1
+  #     SPINDLE_LLM_BACKEND: claude
+  #
+  # - name: audio-stitch
+  #   module: spindle_workers.audio_stitch
+  #   replicas: 2
+  #   env:
+  #     SPINDLE_WORKER_CONFIG_ID: audio-stitch-v1
