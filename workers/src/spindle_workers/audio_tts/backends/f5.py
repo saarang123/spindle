@@ -61,15 +61,21 @@ class F5TTS(BaseTTS):
         ref_text = default_ref_text or os.environ.get("SPINDLE_F5_REF_TEXT")
 
         if not ref_audio:
-            # Fall back to F5-TTS's bundled sample reference. The package
-            # always ships this clip + transcript with the wheel.
-            import f5_tts  # type: ignore
+            # Fall back to F5-TTS's bundled sample reference. Resolve via
+            # importlib.resources because f5_tts is a namespace package
+            # (no top-level __init__.py → f5_tts.__file__ is None).
+            try:
+                from importlib.resources import files
 
-            f5_pkg = Path(f5_tts.__file__).parent
-            bundled = f5_pkg / "infer" / "examples" / "basic" / "basic_ref_en.wav"
-            if bundled.exists():
-                ref_audio = bundled
-                ref_text = ref_text or _BUNDLED_REF_TEXT
+                bundled = files("f5_tts") / "infer" / "examples" / "basic" / "basic_ref_en.wav"
+                # files() returns a Traversable; materialize as a real path.
+                # On wheel installs it's already a regular filesystem path.
+                bundled_path = Path(str(bundled))
+                if bundled_path.exists():
+                    ref_audio = bundled_path
+                    ref_text = ref_text or _BUNDLED_REF_TEXT
+            except (ModuleNotFoundError, FileNotFoundError):
+                pass
 
         self._default_ref_audio = Path(ref_audio) if ref_audio else None
         self._default_ref_text = ref_text
