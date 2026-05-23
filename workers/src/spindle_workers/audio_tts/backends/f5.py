@@ -28,7 +28,11 @@ class F5TTS(BaseTTS):
     """F5-TTS local synthesis.
 
     Args:
-        model_name: F5-TTS variant (e.g. ``"F5-TTS"``, ``"E2-TTS"``).
+        model_name: F5-TTS variant. Must match a config file shipped with
+            f5-tts under ``f5_tts/configs/{name}.yaml``. Defaults to
+            ``"F5TTS_v1_Base"`` (the v1.1.x recommended base model).
+            Other options include ``"F5TTS_Base"``, ``"F5TTS_Small"``,
+            ``"F5TTS_v1_Small"``, ``"E2TTS_Base"``, ``"E2TTS_Small"``.
         device: torch device string (``"cuda"``, ``"cpu"``, ``"mps"``).
             ``None`` lets f5-tts pick.
         default_ref_audio: path to the reference wav for the default voice.
@@ -41,7 +45,7 @@ class F5TTS(BaseTTS):
 
     def __init__(
         self,
-        model_name: str = "F5-TTS",
+        model_name: str = "F5TTS_v1_Base",
         device: str | None = None,
         default_ref_audio: str | Path | None = None,
         default_ref_text: str | None = None,
