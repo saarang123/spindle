@@ -101,7 +101,7 @@ The whole point of using MinIO is that the migration is a config change, not a c
 2. Update `SPINDLE_S3_ENDPOINT`, `SPINDLE_S3_ACCESS_KEY`, `SPINDLE_S3_SECRET_KEY` to point there.
 3. (Optional) Use `mc mirror` to copy existing artifacts from MinIO to the new bucket.
 
-No code changes in `core/`, `api/`, `dispatcher/`, or `workers/`. That's the dividend of putting it behind the `ArtifactStore` protocol.
+No code changes in `core/`, `api/`, `runtime/`, or `workers/`. That's the dividend of putting it behind the `ArtifactStore` protocol.
 
 ## Why MinIO instead of just a directory + tiny HTTP server
 

@@ -43,18 +43,18 @@ Owner: `api/PLAN.md`.
 
 **Done when:** `pytest api/` passes against an in-memory `StateStore` + `JobQueue`. `uvicorn spindle_api.app:app` boots against the docker compose infra.
 
-## Phase 3 — Dispatcher (parallel with 2 + 4 after Phase 1)
+## Phase 3 — Runtime (supervisor + embedded dispatcher; parallel with 2 + 4 after Phase 1)
 
-Owner: `dispatcher/PLAN.md`.
+Owner: `runtime/PLAN.md`.
 
-- Tick loop with reserve → score → lease → dispatch via Unix socket.
-- Lease sweeper with retry policy.
-- Cancellation propagation.
-- Startup recovery sweep (re-enqueue queued jobs missing from queue).
-- Configurable node + capability set via env.
-- Local worker registry (which workers are alive, where their socket is).
+- Per-node supervisor: spawn N children per WorkerSpec, restart on crash w/ backoff, SIGTERM/SIGINT forwarding, per-child log files + stderr tee.
+- Embedded dispatcher task: reserve from per-config Redis streams, atomic lease via `StateStore.acquire_lease`, IPC dispatch to a local worker, revert lease + nack on IPC failure.
+- YAML config schema (RuntimeConfig + WorkerSpec + RestartPolicy + DispatcherConfig); env override for logs_dir.
+- Per-worker `python:` override so different backends can use different venvs.
 
-**Done when:** dispatcher running against Mongo + Redis can pick up a job placed in queue by `pytest` fixtures and write it to a stub Unix-socket listener.
+**Deferred (post-v0):** lease sweeper, deadline sweeper, recovery sweep at boot, cancellation propagation via IPC, scoring beyond "first matching local worker." Add when production workloads demand them.
+
+**Done when:** `spindle-workers run --config configs/runtime.<node>.yaml` spawns workers + dispatcher, picks a queued job off Redis, and round-trips it to a local worker. ✓ landed.
 
 ## Phase 4 — Workers + cpu_echo (parallel with 2 + 3 after Phase 1)
 

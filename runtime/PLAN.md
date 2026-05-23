@@ -20,7 +20,7 @@ The supervisor half is deliberately smaller than supervisord / systemd / launchd
 
 ## Why bundled (tradeoffs)
 
-The dispatcher was originally specced as its own process — a separate `dispatcher/` component with its own PLAN. At single-node and two-node scale (Spindle's current deployment surface), two per-node processes (supervisor + dispatcher) bought no real isolation but doubled the operational surface. Folding them into one runtime trades a small amount of failure-domain purity for meaningful ergonomic gains.
+The dispatcher was originally specced as its own process with its own component directory. At single-node and two-node scale (Spindle's current deployment surface), two per-node processes (supervisor + dispatcher) bought no real isolation but doubled the operational surface. Folding them into one runtime trades a small amount of failure-domain purity for meaningful ergonomic gains.
 
 **What we gain:**
 
