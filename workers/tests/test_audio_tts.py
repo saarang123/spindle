@@ -123,3 +123,17 @@ def test_kokoro_voices_list_without_install(monkeypatch) -> None:
     voices = tts.list_voices()
     assert any(v.id == "am_michael" for v in voices)
     assert tts.sample_rate == 24_000
+
+
+def test_f5_tts_worker_boots(monkeypatch, tmp_path: Path) -> None:
+    pytest.importorskip(
+        "f5_tts",
+        reason="f5-tts not installed (skip if missing audio_tts_f5 extra)",
+    )
+    from spindle_workers.audio_tts.f5 import F5TtsWorker
+
+    _set_env(monkeypatch, tmp_path)
+    cfg = WorkerConfig.from_env()
+    worker = F5TtsWorker(cfg)
+    assert worker.backend_name == "f5"
+    assert worker.capabilities == ["audio.tts"]

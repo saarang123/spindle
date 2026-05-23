@@ -23,11 +23,15 @@ workers:
   # If `python:` is omitted the supervisor uses sys.executable (shared venv).
 
   - name: audio-tts-f5
-    module: spindle_workers.audio_tts.f5      # f5 subpackage not built yet in v0
-    # python: ~/envs/f5-tts/bin/python        # dedicated venv (uncomment to use)
+    module: spindle_workers.audio_tts.f5
+    # python: ~/envs/f5-tts/bin/python        # dedicated venv (optional)
     replicas: 1
     env:
       SPINDLE_WORKER_CONFIG_ID: audio-tts-f5-v1
+      # Optional: pin a reference voice. Without these env vars the F5
+      # backend falls back to the sample bundled with the f5-tts package.
+      # SPINDLE_F5_REF_AUDIO: /path/to/ref.wav
+      # SPINDLE_F5_REF_TEXT: "transcript of the ref audio"
     restart:
       policy: always
       backoff_s: [1, 2, 4, 8, 30]
