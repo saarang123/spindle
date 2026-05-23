@@ -15,6 +15,8 @@ audio_tts = ["openai>=1.40"]
 audio_tts_f5 = ["openai>=1.40", "f5-tts", "numpy>=1.24"]
 audio_tts_kokoro = ["openai>=1.40", "kokoro>=0.7", "numpy>=1.24"]
 audio_tts_all = ["openai>=1.40", "f5-tts", "kokoro>=0.7", "numpy>=1.24"]
+text_rewrite_claude = ["anthropic>=0.40"]
+text_rewrite_openai = ["openai>=1.40"]
 dev = [
   "pytest>=8.0",
   "pytest-asyncio>=0.23",

@@ -43,11 +43,8 @@ workers:
   #   env:
   #     SPINDLE_WORKER_CONFIG_ID: audio-tts-kokoro-v1
 
-  # Future workers land here, e.g.:
-  #
-  # - name: text-rewrite-claude
-  #   module: spindle_workers.text_llm
-  #   replicas: 3
-  #   env:
-  #     SPINDLE_WORKER_CONFIG_ID: text-rewrite-claude-v1
-  #     SPINDLE_LLM_BACKEND: claude
+  - name: text-rewrite-claude
+    module: spindle_workers.text_rewrite.claude
+    replicas: 3
+    env:
+      SPINDLE_WORKER_CONFIG_ID: text-rewrite-claude-v1
