@@ -201,7 +201,7 @@ The existing `OpenAITtsWorker` already reads `params.model` (or falls back to it
 
 You need a new concrete worker class + entry point. Walk through it:
 
-1. **Add a backend class** under `workers/src/spindle_workers/audio_tts/backends/<name>.py` implementing `BaseTTS`:
+1. **Add a backend class** under `workers/spindle_workers/audio_tts/backends/<name>.py` implementing `BaseTTS`:
 
    ```python
    from .base import BaseTTS, Voice
@@ -212,7 +212,7 @@ You need a new concrete worker class + entry point. Walk through it:
        def list_voices(self) -> list[Voice]: ...
    ```
 
-2. **Add a worker subpackage** under `workers/src/spindle_workers/audio_tts/<name>/` with three files:
+2. **Add a worker subpackage** under `workers/spindle_workers/audio_tts/<name>/` with three files:
 
    ```python
    # __init__.py
@@ -254,7 +254,7 @@ You need a new concrete worker class + entry point. Walk through it:
 
 5. **Restart the runtime** on that node. Worker boots, registers, dispatcher routes `audio.tts` jobs with matching `config_id` to it.
 
-For new job *types* entirely (`image.generate`, `text.rewrite`, etc.) you'd add a sibling top-level package under `workers/src/spindle_workers/` matching the existing `audio_tts/` shape. The base class is reused (`WorkerBase` in `workers/src/spindle_workers/base/`), only the worker subclass + backend differ.
+For new job *types* entirely (`image.generate`, `text.rewrite`, etc.) you'd add a sibling top-level package under `workers/spindle_workers/` matching the existing `audio_tts/` shape. The base class is reused (`WorkerBase` in `workers/spindle_workers/base/`), only the worker subclass + backend differ.
 
 ---
 

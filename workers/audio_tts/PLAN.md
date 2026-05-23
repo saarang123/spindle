@@ -213,7 +213,7 @@ class AudioTtsWorker(WorkerBase):
 
 The `BaseTTS` + `OpenAITTS` + `F5TTS` + `KokoroTTS` code currently lives at `~/Documents/podcast-this/cli/podcast/tts/`. Migration steps:
 
-1. Move `base.py`, `_util.py`, `openai.py`, `f5.py`, `kokoro.py` into `spindle/workers/src/spindle_workers/audio_tts/backends/`.
+1. Move `base.py`, `_util.py`, `openai.py`, `f5.py`, `kokoro.py` into `spindle/workers/spindle_workers/audio_tts/backends/`.
 2. Adjust relative imports (`from .base import ...` becomes `from ..base import ...` in some places; double-check).
 3. Delete `podcast-this/cli/podcast/tts/` after the move. Update `podcast-this/cli/pyproject.toml` to drop the openai dep (it now lives in Spindle).
 4. Update podcast-this README pluggability section to point at Spindle.

@@ -15,7 +15,7 @@ members = ["core", "runtime", "workers", "api"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["core/src", "runtime/src", "workers/src", "api/src"]
+src = ["core", "runtime", "workers", "api"]
 
 [tool.ruff.lint]
 select = [
@@ -39,7 +39,7 @@ ignore = []
 quote-style = "double"
 
 [tool.pyright]
-include = ["core/src", "core/tests", "runtime/src", "runtime/tests", "workers/src", "workers/tests", "api/src", "api/tests"]
+include = ["core", "runtime", "workers", "api"]
 pythonVersion = "3.12"
 typeCheckingMode = "standard"
 reportMissingTypeStubs = false

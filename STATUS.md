@@ -161,7 +161,7 @@ Items flagged but not yet answered or explicitly punted:
 | Worker process structure (one-config GPU vs many-config CPU pool) | **resolved** | One process = one config. CPU pools achieved via N replicas in the runtime supervisor's YAML, not via multi-config in one process. See `runtime/PLAN.md`. |
 | Dispatcher as separate process vs embedded in runtime | **resolved (embedded)** | At 1–2 nodes the two-process split bought no isolation but doubled operational surface. Folded into `runtime/` — same per-node singleton, half the things to start. Escape hatch documented in `runtime/PLAN.md`. |
 | Cross-node service exposure (Mongo / Redis on control node ↔ workers on GPU node) | **resolved (LAN bind)** | Mongo + Redis bind to loopback + the control node's LAN IP; LAN-only reachable. Auth deferred until something is on a non-trusted network. |
-| Artifact module gitignored | **resolved** | `.gitignore` had unanchored `artifacts/` matching `core/src/spindle_core/artifacts/` — the entire ArtifactStore module wasn't in the repo. Now anchored to `/artifacts/` etc. |
+| Artifact module gitignored | **resolved** | `.gitignore` had unanchored `artifacts/` matching `core/spindle_core/artifacts/` — the entire ArtifactStore module wasn't in the repo. Now anchored to `/artifacts/` etc. |
 | `Worker.current_job_ids` field | **dropped** | Volatile state; query `jobs` collection on demand instead |
 | Per-job-type input/output schemas | deferred | Lives in `api/` when we build it; conventions documented |
 | `runtime_backend` as enum vs string | leaned enum, not yet enforced | Cosmetic, can change anytime |

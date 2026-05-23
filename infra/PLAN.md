@@ -77,8 +77,8 @@ ignore = ["S101"]               # asserts allowed in tests
 quote-style = "double"
 
 [tool.pyright]
-include = ["core/src", "api/src", "runtime/src", "workers/src", "cli/src"]
-strict = ["core/src"]
+include = ["core", "api", "runtime", "workers", "cli"]
+strict = ["core"]
 pythonVersion = "3.12"
 typeCheckingMode = "standard"
 
