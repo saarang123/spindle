@@ -11,6 +11,12 @@ node_id: gpu-node
 log_dir: ~/.spindle/logs
 shutdown_grace_seconds: 10
 
+# Embedded dispatcher. Same shape as control-node; auto-derives the configs
+# it serves from the local workers' SPINDLE_WORKER_CONFIG_ID values.
+dispatcher:
+  lease_ttl_seconds: 300
+  tick_block_ms: 200
+
 workers:
   # GPU workers can pin their own Python interpreter via `python:` — useful
   # when models have incompatible torch / CUDA versions and need isolated envs.

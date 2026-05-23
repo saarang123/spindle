@@ -41,17 +41,21 @@ class ChildProcess:
         env: dict[str, str],
         logs_dir: Path,
         restart: RestartPolicy,
+        config_id: str | None = None,
         ipc_socket_dir: Path = Path("/tmp"),
         python: str | None = None,
     ) -> None:
         self.name = name
         self.worker_id = worker_id
         self.module = module
+        # config_id is exposed for the dispatcher to look up "which workers
+        # serve this ModelConfig" without going through the registry file.
+        self.config_id = config_id
         self._env = dict(env)
         self._restart = restart
         self._logs_dir = Path(logs_dir)
         self._log_file = self._logs_dir / f"{worker_id}.log"
-        self._ipc_socket = ipc_socket_dir / f"spindle-worker-{worker_id}.sock"
+        self.ipc_socket = ipc_socket_dir / f"spindle-worker-{worker_id}.sock"
         self._python = (
             str(Path(python).expanduser()) if python else sys.executable
         )
@@ -65,9 +69,13 @@ class ChildProcess:
     def _env_for_child(self) -> dict[str, str]:
         env = {**self._env}
         env["SPINDLE_WORKER_ID"] = self.worker_id
-        env["SPINDLE_WORKER_IPC_SOCKET"] = str(self._ipc_socket)
+        env["SPINDLE_WORKER_IPC_SOCKET"] = str(self.ipc_socket)
         env["SPINDLE_LOGS_DIR"] = str(self._logs_dir)
         return env
+
+    def is_alive(self) -> bool:
+        """True if the child process exists and hasn't exited."""
+        return self._proc is not None and self._proc.returncode is None
 
     async def run(self) -> None:
         """Spawn → wait → restart-per-policy loop. Returns on permanent stop."""

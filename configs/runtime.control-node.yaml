@@ -11,6 +11,14 @@ node_id: control-node
 log_dir: ~/.spindle/logs
 shutdown_grace_seconds: 10
 
+# Embedded dispatcher. Reads jobs from Redis (configs derived from local
+# workers' SPINDLE_WORKER_CONFIG_ID), leases via Mongo CAS, IPC-dispatches
+# to local workers. Comment out this block to run supervisor-only mode.
+dispatcher:
+  lease_ttl_seconds: 300
+  tick_block_ms: 200
+  # configs: []        # leave empty to auto-derive from workers below
+
 workers:
   - name: audio-tts-openai
     module: spindle_workers.audio_tts.openai

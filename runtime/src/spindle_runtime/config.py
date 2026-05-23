@@ -50,6 +50,21 @@ class WorkerSpec(BaseModel):
         return self
 
 
+class DispatcherConfig(BaseModel):
+    """Embedded-dispatcher settings.
+
+    If this block is present in YAML, the runtime starts a dispatcher task
+    alongside the supervisor. If absent, the runtime is supervisor-only
+    (workers boot but no one routes jobs to them — useful for testing).
+    """
+
+    lease_ttl_seconds: float = 300.0
+    tick_block_ms: int = 200
+    # Optional explicit config list. If empty/None, derived from local workers'
+    # SPINDLE_WORKER_CONFIG_ID env values.
+    configs: list[str] = Field(default_factory=list)
+
+
 class WorkersConfig(BaseModel):
     """The entire runtime config for one machine."""
 
@@ -57,6 +72,7 @@ class WorkersConfig(BaseModel):
     log_dir: Path = Field(default_factory=lambda: Path("~/.spindle/logs"))
     shutdown_grace_seconds: float = 10.0
     workers: list[WorkerSpec]
+    dispatcher: DispatcherConfig | None = None
 
     @classmethod
     def from_yaml(cls, path: Path | str) -> WorkersConfig:
