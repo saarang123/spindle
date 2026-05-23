@@ -17,6 +17,7 @@ incompatible torch versions, different Python versions). Use
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from abc import abstractmethod
 
@@ -51,23 +52,47 @@ class AudioTtsWorker(WorkerBase):
         """Return the BaseTTS implementation for this subclass."""
 
     async def execute(self, job: Job, ctx: JobContext) -> JobResult:
+        from spindle_core.types.artifact import ArtifactKind
+        from .backends._util import wav_duration_seconds
+
         text = job.input["text"]
         voice = job.input.get("voice")
         options = job.input.get("options") or {}
 
         log.info("synth start chars=%d voice=%s", len(text), voice or "default")
-        wav_bytes = self._tts.synthesize(text, voice, **options)
-        log.info("synth done bytes=%d", len(wav_bytes))
+        # Synthesize off the event loop so heartbeats / IPC stay responsive.
+        wav_bytes = await asyncio.to_thread(
+            self._tts.synthesize, text, voice, **options
+        )
+        duration_s = wav_duration_seconds(wav_bytes)
+        log.info(
+            "synth done bytes=%d duration_s=%.2f",
+            len(wav_bytes), duration_s,
+        )
 
-        # v0: no ArtifactWriter yet — return byte count + sample-rate metadata.
-        # When ArtifactWriter lands, this method writes WAV to MinIO and adds
-        # an ArtifactMeta to JobResult.artifacts.
+        await ctx.artifacts.write(
+            key="audio.wav",
+            data=wav_bytes,
+            kind=ArtifactKind.AUDIO,
+            mime_type="audio/wav",
+            duration_seconds=duration_s,
+            metadata={
+                "sample_rate": self._tts.sample_rate,
+                "channels": 1,
+                "backend": self.backend_name,
+                "voice": voice or "default",
+            },
+        )
+
         return JobResult(
             output={
                 "voice": voice or "default",
                 "backend": self.backend_name,
                 "char_count": len(text),
+                "duration_seconds": duration_s,
+            },
+            runtime={
+                "sample_rate": self._tts.sample_rate,
                 "wav_bytes": len(wav_bytes),
             },
-            runtime={"sample_rate": self._tts.sample_rate},
         )

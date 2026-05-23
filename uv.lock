@@ -4195,6 +4195,7 @@ name = "spindle-workers"
 version = "0.1.0"
 source = { editable = "workers" }
 dependencies = [
+    { name = "httpx" },
     { name = "pydantic" },
     { name = "spindle-core" },
 ]
@@ -4228,6 +4229,7 @@ dev = [
 requires-dist = [
     { name = "f5-tts", marker = "extra == 'audio-tts-all'" },
     { name = "f5-tts", marker = "extra == 'audio-tts-f5'" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "kokoro", marker = "extra == 'audio-tts-all'", specifier = ">=0.7" },
     { name = "kokoro", marker = "extra == 'audio-tts-kokoro'", specifier = ">=0.7" },
     { name = "numpy", marker = "extra == 'audio-tts-all'", specifier = ">=1.24" },
