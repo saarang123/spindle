@@ -36,26 +36,25 @@ The reference deployment is a **control node + GPU node**, but no code hardcodes
 ```
 ┌─────────────────── control node ───────────────────────────────────┐
 │  FastAPI gateway        :8080 (LAN-bound)                          │
-│  MongoDB                :27017 (LAN-bound, auth required)          │
-│  Redis                  :6379  (LAN-bound, auth required)          │
+│  MongoDB                :27017 (LAN-bound, optional auth)          │
+│  Redis                  :6379  (LAN-bound, optional auth)          │
 │  ClickHouse             :8123  (LAN-bound)             [later]     │
-│  control-dispatcher     (one process)                              │
-│  text worker            (MLX / llama.cpp / etc.)                   │
-│  cpu worker pool        (ffmpeg, external API jobs)                │
+│  runtime (one process)  supervisor + embedded dispatcher           │
+│    └─ N worker children (e.g. audio_tts.openai × 4)                │
 └─────────────────────────────────────────────────────────────────────┘
-                                │  ethernet LAN
+                                │  ethernet LAN (or Tailscale)
                                 │  mDNS or /etc/hosts
                                 ▼
 ┌─────────────────── GPU node ───────────────────────────────────────┐
-│  gpu-dispatcher         (one process)                              │
-│  image worker           (diffusers / comfy client)                 │
-│  video worker           (comfy / CLI client)                       │
+│  runtime (one process)  supervisor + embedded dispatcher           │
+│    └─ worker children (e.g. audio_tts.kokoro, audio_tts.f5,        │
+│        future image_comfy, video_comfy, ...)                       │
 │  MinIO :9000            S3-compatible artifact store               │
-│                         backed by local NVMe                       │
+│                         backed by local storage                    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-Network: same Ethernet, no internet exposure. Auth is username/password on Mongo+Redis, optional bearer token on the API. TLS deferred until something is on a coffee-shop network.
+Network: same Ethernet (or Tailscale), no internet exposure. Auth is username/password on Mongo+Redis if exposed beyond loopback, optional bearer token on the API. TLS deferred until something is on a non-trusted network.
 
 ## 3. Components
 
@@ -93,17 +92,18 @@ The dispatcher's responsibilities — read from per-config Redis streams, score 
 
 Worker base class + concrete worker shims.
 
-`WorkerBase` handles:
-- Local IPC server (Unix socket) that accepts "run this job" from the dispatcher.
-- Heartbeat loop → POST `/workers/{id}/heartbeat`.
-- Lease extension during long jobs.
-- Cancellation polling.
-- Reporting start / progress / complete / fail to the API.
-- Artifact uploads via `ArtifactStore`.
+`WorkerBase` (v0 scope) handles:
+- Local IPC server (Unix socket, length-prefixed JSON) — accepts `op: run` from the dispatcher, runs `execute()` on a new task, rejects with `AT_CAPACITY` past `concurrency_limit`.
+- Registry file at `/tmp/spindle-workers/<worker_id>.json` on boot, removed on clean shutdown.
+- ApiClient (httpx async) — POSTs `/jobs/{id}/start`, `/complete`, `/fail` as the job moves through.
+- ArtifactWriter — uploads bytes via `ArtifactStore.put` and collects `ArtifactMeta` to ship with `/complete`.
+- Stderr-logged heartbeat (the runtime tracks process liveness; an API-side worker heartbeat lands when scoring needs it).
 
-Concrete workers subclass and implement `async def execute(job, ctx) -> WorkerOutput`. Phase-4 ships `cpu_echo` (sleeps and round-trips). Real runtimes (MLX, ComfyUI, ffmpeg) come in Phase 6.
+Concrete workers subclass and implement `async def execute(job, ctx) -> JobResult`. Currently shipped: `audio_tts.openai` (hosted, CPU pool), `audio_tts.kokoro` (local GPU), `audio_tts.f5` (local GPU, voice cloning). `cpu_echo` reference worker pending.
 
-Workers do not import from `dispatcher/` or `api/`. They depend on `core/` only.
+Deferred (lands when use cases demand): API-side heartbeat, lease extension during long jobs, cancellation polling, progress reporting.
+
+Workers do not import from `runtime/` or `api/`. They depend on `core/` only.
 
 ### `runtime/`
 

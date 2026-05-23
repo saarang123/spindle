@@ -2,15 +2,37 @@
 
 A local, durable, observable job fabric for heterogeneous generative ML workloads.
 
-Runs across a control node + one or more GPU nodes. Schedules jobs to the right runtime based on capability and warm-model affinity. Persists state across restarts. Keeps enough history to replay/eval jobs against new model configs later.
+Runs across a control node + one or more GPU nodes. Routes each job to a worker on whichever node hosts the matching `ModelConfig`. Persists state across restarts. Keeps enough history to replay / eval jobs against new model configs later.
 
 ## What it does
 
-- Submit jobs of varied types: `text.*`, `image.*`, `video.*`, `cpu.*`, `external.*`, `eval.*`.
-- Track lifecycle (`queued → leased → running → succeeded|failed|canceled|dead_lettered`), retry on transient failures, dead-letter on persistent ones.
-- Dispatch to the right worker via per-config queues + a host-level scheduler that scores candidates.
+- Submit jobs of varied types: `text.*`, `image.*`, `video.*`, `audio.*`, `cpu.*`, `external.*`, `eval.*`.
+- Track lifecycle (`queued → leased → running → succeeded | failed | canceled | dead_lettered`), retry on transient failures, dead-letter on persistent ones.
+- Per-config Redis streams + an embedded per-node dispatcher that leases jobs atomically and IPC-dispatches to a local worker. v0 picks the first matching local worker; scoring (warm-model affinity, capacity, fairness) is deferred until contention shows up.
 - Persist artifacts (images, video, audio, JSON, text) with lineage back to the producing job and model config.
-- Replay historical jobs against alternate model configs for A/B comparison and promotion.
+- Replay historical jobs against alternate model configs for A/B comparison and promotion (Phase 7).
+
+## Data flow in one diagram
+
+```
+client  ─POST /jobs─►  api ─►  Mongo (queued)  +  Redis stream (per config_id)
+                                                          │
+                                                          ▼  (any node serving that config)
+                                       runtime: dispatcher tick reads Redis
+                                            → acquire_lease (Mongo CAS)
+                                            → IPC `op:run` to a local worker's Unix socket
+                                                          │
+                                                          ▼
+                                        worker.execute(job, ctx)
+                                            → ArtifactStore.put(...)  → MinIO
+                                            → POST /jobs/{id}/complete → api
+                                                                       → Mongo (succeeded)
+
+client polls GET /jobs/{id}   → terminal status + artifact URIs
+client GET /artifacts/{id}/bytes  → streams from ArtifactStore (cross-node if needed)
+```
+
+The dispatcher is **embedded in the runtime** (same process as the supervisor); the API talks to `core`'s state / queue / artifact backends directly, never through Redis or back through itself.
 
 ## What it isn't
 
