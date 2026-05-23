@@ -5,6 +5,7 @@ description = "Spindle — per-node worker supervisor."
 requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
 dependencies = [
+  "spindle-core",
   "pydantic>=2.7",
   "pyyaml>=6.0",
   "typer>=0.12",
@@ -15,6 +16,9 @@ dev = [
   "pytest>=8.0",
   "pytest-asyncio>=0.23",
 ]
+
+[tool.uv.sources]
+spindle-core = { workspace = true }
 
 [project.scripts]
 spindle-workers = "spindle_runtime.main:cli"

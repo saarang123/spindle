@@ -1,3 +1,9 @@
+> **Note (2026-05-22):** The dispatcher implementation has been merged into the runtime supervisor — both are per-node singletons, and bundling them eliminates the operational complexity of two independent processes per node. They share an in-memory view of local workers (no `/tmp/spindle-workers/` polling needed) and a single lifecycle.
+>
+> This document remains as the design reference for the dispatcher's responsibilities (tick loop, sweepers, scoring, recovery). The code lives in [`../runtime/src/spindle_runtime/dispatcher.py`](../runtime/PLAN.md#dispatcher-embedded). The v0 implementation skips sweepers, scoring, and recovery — see runtime/PLAN.md "Out of scope" for the deferred items below that will land later.
+
+---
+
 # `dispatcher/` — host-level scheduler
 
 One process per node. Reserves jobs from per-config Redis streams, makes scheduling decisions, leases atomically via `StateStore`, and dispatches to local workers via Unix socket. Also runs the lease sweeper and cancellation propagator.

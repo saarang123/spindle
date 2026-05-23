@@ -1,18 +1,50 @@
 # `runtime/` — per-node worker supervisor
 
-A small, platform-agnostic process supervisor that boots and babysits worker processes on a single node. One supervisor instance per machine, driven by a YAML config listing every worker on that machine.
+A small, per-node Python process that does two things in one place:
 
-Workers themselves are dumb — they self-register via the registry directory, talk to the API directly, and exit on crash. The supervisor's only job is "are my children alive? if not, restart with backoff."
+1. **Supervises worker child processes** — spawn, restart on crash, drain on shutdown.
+2. **Dispatches jobs to local workers** — reads from per-config Redis streams, leases atomically via Mongo, hands off to a local worker over Unix-socket IPC.
 
-Read [`../ARCHITECTURE.md`](../ARCHITECTURE.md) section 3 (Components → runtime) and [`../workers/PLAN.md`](../workers/PLAN.md) (workers do not know the supervisor exists). Depends on nothing else in this repo at runtime — uses `asyncio` + `subprocess` only.
+Both run as asyncio tasks in the same TaskGroup. They share an in-memory view of "workers on this machine," so the dispatcher doesn't have to re-discover children via the `/tmp/spindle-workers/` registry directory — it reads the supervisor's `ChildProcess` list directly. One runtime instance per machine.
+
+Read [`../ARCHITECTURE.md`](../ARCHITECTURE.md) section 3 (Components → runtime) and [`../workers/PLAN.md`](../workers/PLAN.md) (workers do not know the runtime exists; they receive jobs via IPC and report lifecycle via the API). The full design rationale for the dispatcher half lives in [`../dispatcher/PLAN.md`](../dispatcher/PLAN.md) — kept as a reference doc; the implementation lives here under `dispatcher.py`.
 
 ## Goal
 
-1. A YAML-driven supervisor that spawns N child processes per worker spec, captures their logs, and restarts on exit with exponential backoff.
-2. A `spindle workers` subcommand group (`run`, `status`, `stop`, `logs`) for operator control.
-3. Per-machine deploys: each node has its own YAML; the supervisor reads only that file.
+1. **Supervisor**: a YAML-driven loop that spawns N child processes per worker spec, captures their logs, and restarts on exit with exponential backoff.
+2. **Dispatcher**: an embedded async task that reads from per-config Redis streams, atomically leases via `StateStore.acquire_lease`, and dispatches jobs to local workers via Unix-socket IPC.
+3. A `spindle workers` subcommand group (`run`, `status`, `stop`, `logs`) for operator control.
+4. Per-machine deploys: each node has its own YAML; the runtime reads only that file.
 
-Deliberately smaller than supervisord / systemd / launchd. The point is platform-agnostic Python with no extra system dependencies, and a debugging path that lets you bypass the supervisor any time by `uv run python -m spindle_workers.<kind>` with the same env contract.
+The supervisor half is deliberately smaller than supervisord / systemd / launchd — platform-agnostic Python with no extra system dependencies, and a debugging path that lets you bypass it by `uv run python -m spindle_workers.<kind>` with the same env contract. The dispatcher half follows Spindle's planned design (see `../dispatcher/PLAN.md`) but skips sweepers / scoring / recovery in v0.
+
+## Why bundled (tradeoffs)
+
+`dispatcher/PLAN.md` originally specced the dispatcher as its own process. At single-node and two-node scale (Spindle's current deployment surface), two per-node processes (supervisor + dispatcher) bought no real isolation but doubled the operational surface. Folding them into one runtime trades a small amount of failure-domain purity for meaningful ergonomic gains.
+
+**What we gain:**
+
+- **One process per node** instead of two. Single `spindle-workers run` command, single PID, single log stream, single `Ctrl-C`. Half the operational surface to babysit.
+- **Shared in-memory worker view.** Dispatcher reads from the supervisor's `ChildProcess` list directly — no polling `/tmp/spindle-workers/<id>.json`, no race between "supervisor wrote descriptor" and "dispatcher reads descriptor."
+- **One config file** (the runtime YAML grows a small `dispatcher:` block). No second YAML to keep in sync.
+- **Coupled lifecycle.** SIGTERM gracefully stops both halves — dispatcher stops accepting new work, then workers are drained.
+
+**What we accept:**
+
+| Trade-off | Reality at this scale |
+|---|---|
+| Single failure domain — if dispatcher logic crashes, supervisor goes with it | Dispatcher is small; crashes are bugs to fix, not operational hazards. Worker children are separate processes, untouched by runtime crashes. |
+| Can't restart dispatcher independently of supervisor | At 1–2 nodes we redeploy by killing the whole runtime anyway. Worker children come back fast via the restart policy. |
+| `spindle-runtime` now depends on `spindle-core` (Mongo + Redis client transitives) | `spindle-core` is small; backends are already running on every node that runs the runtime. |
+| Two concerns in one Python package | Cleanly separated in code (`supervisor.py` vs `dispatcher.py`); only bundled at runtime. |
+
+**When we'd un-bundle:**
+
+- Many nodes (10+) where dispatcher cost dominates and per-node failure isolation matters more.
+- Frequent dispatcher-logic redeploys (scheduling tweaks) where bouncing workers each time is painful.
+- Dispatcher grows complex enough that "different failure domain" becomes a real argument (sweepers, cross-config fairness, etc.).
+
+None of these apply yet. The escape hatch is small: extract `dispatcher.py` into a sibling package, swap the in-process `ChildProcess` lookup for the registry-file path. Bundling is a deployment choice, not a design lock-in.
 
 ## Package
 
@@ -20,18 +52,22 @@ Deliberately smaller than supervisord / systemd / launchd. The point is platform
 
 ```
 runtime/
-  pyproject.toml
+  pyproject.toml          # depends on spindle-core (for StateStore + JobQueue)
   src/spindle_runtime/
     __init__.py
-    config.py             # YAML schema (pydantic) — WorkersConfig, WorkerSpec, RestartPolicy
+    config.py             # YAML schema — RuntimeConfig, WorkerSpec, RestartPolicy,
+                          # DispatcherConfig (configs this node handles, lease TTL, …)
     child.py              # ChildProcess — Popen wrapper + restart loop
     supervisor.py         # Supervisor — parses config, owns N ChildProcess instances
-    logging.py            # per-child log routing: file + stderr tee with prefix
+    dispatcher.py         # Dispatcher — Redis read, Mongo lease, IPC dispatch task
+    ipc_client.py         # Unix-socket JSON-RPC client (dispatcher → worker)
+    logging.py            # per-child log routing
     main.py               # `spindle workers <subcommand>` entrypoints (Typer)
   tests/
     test_config.py
     test_child.py
     test_supervisor.py
+    test_dispatcher.py    # tick loop, lease race, IPC failure → revert
     conftest.py
 ```
 
@@ -220,6 +256,118 @@ Cooperative shutdown: SIGTERM/SIGINT → mark every `ChildProcess._stopping = Tr
 
 The supervisor does NOT track jobs, does NOT talk to Mongo / Redis / API. It only knows OS-level process state. Workers report lifecycle to the API independently.
 
+## Dispatcher (embedded)
+
+Runs as a peer asyncio task to the supervisor in the same TaskGroup. Shares the supervisor's in-memory `ChildProcess` list — so the dispatcher knows which local workers exist (and their IPC socket paths) without polling the registry directory.
+
+### Tick loop
+
+Every `tick_ms` (default 200ms):
+
+```python
+async def tick(self) -> bool:
+    """Returns True if a job was dispatched this tick."""
+    active_configs = self._configs_for_this_node()
+    if not active_configs:
+        return False
+
+    reserved = await self.queue.reserve(
+        config_ids=active_configs,
+        consumer=self.node_id,
+        count=1,
+        block_ms=200,
+    )
+    if not reserved:
+        return False
+
+    r = reserved[0]
+    job = await self.state.get_job(r.job_id)
+    if job is None or job.status != JobStatus.QUEUED:
+        await self.queue.ack(r.config_id, r.reservation_id)  # drop; can't run
+        return False
+
+    worker = self._pick_local_worker(job.config_id)
+    if worker is None:
+        await self.queue.nack(r.config_id, r.reservation_id)  # try again next tick
+        return False
+
+    lease = await self.state.acquire_lease(
+        job.id, worker.worker_id, uuid4(),
+        now() + timedelta(seconds=self.lease_ttl_s),
+    )
+    if lease is None:
+        # Race: someone else got it.
+        await self.queue.nack(r.config_id, r.reservation_id)
+        return False
+
+    try:
+        await self.ipc.dispatch(worker.ipc_socket, job, lease)
+    except IpcError:
+        await self.state.transition(
+            job.id, expected_from=JobStatus.LEASED, to=JobStatus.QUEUED,
+            patch={"assigned_worker_id": None, "lease_id": None, "lease_expires_at": None},
+        )
+        await self.queue.nack(r.config_id, r.reservation_id)
+        return False
+
+    await self.queue.ack(r.config_id, r.reservation_id)
+    return True
+```
+
+### Worker selection (v0)
+
+Simplest possible: find the first `ChildProcess` whose worker's `config_id` matches the job's `config_id`. No scoring, no warm-affinity weighting. Add scoring once there's a real reason (multi-worker contention, capacity awareness).
+
+Worker → config_id mapping comes from the YAML's `env: SPINDLE_WORKER_CONFIG_ID` (the same key the worker reads at boot). Cached on the `ChildProcess` so the dispatcher can look it up cheaply.
+
+### IPC client
+
+Length-prefixed JSON over the worker's Unix socket (path: `/tmp/spindle-worker-<worker_id>.sock`). Protocol:
+
+```jsonc
+// dispatcher → worker
+{ "op": "run", "job_id": "...", "lease_id": "...", "config_id": "...",
+  "input": {...}, "deadline_at": "...", "lease_expires_at": "..." }
+
+// worker → dispatcher (immediate ack)
+{ "ok": true }
+// or:
+{ "ok": false, "error": "AT_CAPACITY" }
+```
+
+After the immediate ack the worker reports lifecycle to the API directly (`POST /jobs/{id}/start` → ... → `POST /jobs/{id}/complete`). The dispatcher's job ends at hand-off.
+
+### Dispatcher config
+
+Added to the YAML schema as an optional block:
+
+```yaml
+node_id: control-node
+log_dir: ~/.spindle/logs
+
+dispatcher:
+  configs: [audio-tts-openai-v1]   # streams this node reads from Redis
+  lease_ttl_seconds: 300           # initial lease length (no extension in v0)
+  tick_ms: 200
+
+workers:
+  - name: audio-tts-openai
+    module: spindle_workers.audio_tts.openai
+    replicas: 4
+    env:
+      SPINDLE_WORKER_CONFIG_ID: audio-tts-openai-v1
+```
+
+If `dispatcher` is omitted the runtime runs in supervisor-only mode (useful for nodes that don't need to dispatch — though this is unusual, since the dispatcher *is* the link between the queue and the workers).
+
+### Out of scope (v0)
+
+- Lease sweeper — not needed when leases are 5 min and jobs are short. Add once long-running jobs land.
+- Deadline sweeper — same.
+- Scoring beyond "first matching local worker" — add when there's contention.
+- Startup recovery sweep (re-enqueue `queued` jobs missing from Redis) — add for production deploys.
+- Cancellation propagation — add when API exposes `POST /jobs/{id}/cancel`.
+
 ## Status surface
 
 Supervisor exposes a small Unix-socket status endpoint at `/tmp/spindle-supervisor-{node_id}.sock`. Three operations:
@@ -271,6 +419,9 @@ Out-of-order boot is recoverable: workers retry their initial registration.
 - [ ] `spindle workers stop` propagates a stop request and the supervisor exits cleanly within the grace period.
 - [ ] `restart.policy = on_failure` with `exit_code = 0` does NOT restart.
 - [ ] Manual `python -m spindle_workers.cpu_echo` (bypassing supervisor) still works identically — the supervisor adds no special env that workers depend on.
+- [ ] Dispatcher tick: when a fixture enqueues a job for a config that has a local worker, the dispatcher reserves from Redis, leases via Mongo, and writes the `run` payload to that worker's IPC socket (verified with a stub IPC server). Round-trip under 1s.
+- [ ] Lease race: when two dispatcher instances try to lease the same job (simulated), exactly one succeeds; the loser nacks the queue and the message is reprocessed.
+- [ ] IPC failure: if the worker's socket is dead, the dispatcher reverts the lease (job back to `queued`) and nacks the queue message.
 - [ ] `ruff` + `pyright` clean.
 
 ## Out of scope
@@ -281,3 +432,6 @@ Out-of-order boot is recoverable: workers retry their initial registration.
 - Hot config reload — restart the supervisor when YAML changes.
 - Placement / GPU-aware scheduling — that's the dispatcher's job, not the supervisor's.
 - Mac-specific (launchd) or Linux-specific (systemd) deeper integrations — valid for production but explicitly not v0.
+- Dispatcher sweepers (lease, deadline, recovery, cancel propagation) — defer until production load demands them.
+- Dispatcher scoring beyond "first local worker matching config_id" — same.
+- Multi-process dispatcher (sharded reads, multiple consumer groups) — not needed at this scale.

@@ -83,16 +83,11 @@ FastAPI gateway. The only HTTP-facing service. Owns:
 
 API does **not** do leasing — that's the dispatcher. API talks to `StateStore` and `JobQueue` directly.
 
-### `dispatcher/`
+### `dispatcher/` (merged into `runtime/`)
 
-One process per host. Owns:
+The dispatcher's responsibilities — read from per-config Redis streams, score candidates, atomically lease via `StateStore.acquire_lease`, hand off to local workers via Unix socket, run sweepers (lease expiry, deadline, cancellation) — now live as an asyncio task inside the runtime supervisor (see `runtime/` below). Same per-node-singleton semantics; one less process to start; in-memory access to the supervisor's `ChildProcess` list eliminates registry-file polling.
 
-- Tick loop: reserve from per-config Redis streams (only configs assigned to this host) → score candidates → atomic lease via `StateStore.acquire_lease` → hand off to local worker via Unix socket.
-- Lease sweeper: periodically find expired leases and either requeue or dead-letter based on retry policy.
-- Cancellation propagation: read `cancel_requested` flag from state, signal local worker.
-- Configurable: `SPINDLE_DISPATCHER_NODE` and a list of configs/capabilities this dispatcher serves.
-
-Dispatcher talks directly to `StateStore` and `JobQueue`. It does NOT go through the API — the API is for clients and workers.
+`dispatcher/PLAN.md` is preserved as the design reference. The v0 implementation in `runtime/dispatcher.py` covers the tick loop + IPC dispatch + lease acquisition; sweepers / scoring / recovery defer.
 
 ### `workers/`
 
@@ -112,11 +107,14 @@ Workers do not import from `dispatcher/` or `api/`. They depend on `core/` only.
 
 ### `runtime/`
 
-Per-node worker supervisor. A small, platform-agnostic Python process that reads a YAML config listing local workers, spawns each as a subprocess (replicas N), restarts on crash with exponential backoff, forwards SIGTERM/SIGINT for clean shutdown. One supervisor per machine.
+Per-node bundle: worker supervisor + job dispatcher in one Python process.
 
-Does not talk to Mongo / Redis / API. Only knows about OS processes. Workers are independent — they self-register, talk to the API directly. The supervisor's universe stops at "are my children alive?".
+- **Supervisor task**: reads a YAML config listing local workers, spawns each as a subprocess (replicas N), restarts on crash with exponential backoff, forwards SIGTERM/SIGINT for clean shutdown.
+- **Dispatcher task**: reads from per-config Redis streams, atomically leases via `StateStore.acquire_lease`, dispatches to local workers via Unix socket. Uses the supervisor's in-memory `ChildProcess` list to find workers (no `/tmp/spindle-workers/` polling).
 
-Replaces the per-worker launchd / systemd unit files that would otherwise be needed.
+One runtime instance per machine. Replaces the per-worker launchd / systemd unit files AND the separate dispatcher process that would otherwise be needed.
+
+Workers themselves are independent — they receive jobs via IPC, talk to the API directly for lifecycle posts, write artifacts via `ArtifactStore`. The runtime's universe stops at "spawn my children + route jobs to them."
 
 ### `cli/`
 

@@ -112,15 +112,14 @@ Full design rationale: [`ARCHITECTURE.md`](./ARCHITECTURE.md). Phased build plan
 
 In rough dependency order:
 
-1. **API** (`api/PLAN.md`) — FastAPI gateway, idempotency, lifecycle endpoints. Doesn't depend on workers.
-2. **Dispatcher** (`dispatcher/PLAN.md`) — tick loop, scoring, sweepers, IPC client. Doesn't depend on workers.
-3. **Runtime supervisor** (`runtime/PLAN.md`) — new component. Per-node YAML-driven process supervisor; spawns + restarts workers.
-4. **Worker base + `cpu_echo` + `audio_tts`** (`workers/PLAN.md`, `workers/audio_tts/PLAN.md`) — unblocked. `audio_tts` (TTS for podcast-this) is the first real workload driving WorkerBase forward. Process structure resolved: one process = one config, replicas via runtime supervisor.
+1. **API** (`api/PLAN.md`) — FastAPI gateway, idempotency, worker-lifecycle endpoints. Doesn't depend on workers.
+2. **Runtime + dispatcher** (`runtime/PLAN.md` — merged) — per-node bundle: supervisor for worker processes + dispatcher tick loop in one process. Supervisor half is **already implemented** (commit `7e92fe7`). Dispatcher half pending: Redis read, Mongo lease acquisition, IPC dispatch to local children. `dispatcher/PLAN.md` is preserved as the design reference.
+3. **WorkerBase IPC + ApiClient + ArtifactWriter** (`workers/PLAN.md`) — base class already boots and registers; remaining: Unix-socket IPC server, API client for lifecycle posts, artifact upload helper.
+4. **Real workers (beyond audio_tts.openai)** — `audio_tts.kokoro` migrated (commit `ac4149d`, needs Py 3.12/3.13 venv to actually run); `audio_tts.f5` deferred; text LLMs, ComfyUI image/video, audio_stitch arrive later.
 5. **CLI** (`cli/PLAN.md`) — thin Typer wrapper over API.
-6. **Real workers (beyond audio_tts)** — text LLMs (MLX / llama.cpp / Claude / OpenAI), ComfyUI image/video, ffmpeg, audio_stitch. Phase 6.
-7. **Eval / replay primitives** — shard, replay, score, compare. Phase 7.
-8. **ClickHouse telemetry** — async event mirror from state. Phase 8.
-9. **Web UI** — far future, optional.
+6. **Eval / replay primitives** — shard, replay, score, compare. Phase 7.
+7. **ClickHouse telemetry** — async event mirror from state. Phase 8.
+8. **Web UI** — far future, optional.
 
 ---
 
