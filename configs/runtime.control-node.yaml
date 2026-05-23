@@ -43,8 +43,6 @@ workers:
   #   env:
   #     SPINDLE_WORKER_CONFIG_ID: audio-tts-kokoro-v1
 
-  - name: text-rewrite-claude
-    module: spindle_workers.text_rewrite.claude
-    replicas: 3
-    env:
-      SPINDLE_WORKER_CONFIG_ID: text-rewrite-claude-v1
+  # text rewriting is handled by spawning `claude -p` as a subprocess from the
+  # consumer (podcast-this) rather than going through Spindle. Re-add a worker
+  # block here if there's ever a need for queued / metered / fan-out rewrites.
