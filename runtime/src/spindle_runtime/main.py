@@ -10,6 +10,13 @@ from pathlib import Path
 from typing import Optional
 
 import typer
+from dotenv import load_dotenv
+
+# Load .env from the cwd (and parent dirs) so secrets like OPENAI_API_KEY,
+# SPINDLE_S3_*, etc. are available in os.environ for child workers.
+# Pydantic-settings does this for SPINDLE_* fields but doesn't write them
+# into os.environ, which the children need.
+load_dotenv()
 
 from .config import WorkersConfig, resolve_logs_dir
 from .supervisor import Supervisor

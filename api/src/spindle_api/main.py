@@ -27,8 +27,13 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import uvicorn
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
+
+# Pull SPINDLE_* and any sibling secrets out of .env into os.environ before
+# Settings is instantiated.
+load_dotenv()
 
 from spindle_core.artifacts import make_artifact_store
 from spindle_core.artifacts.protocol import ArtifactStore
