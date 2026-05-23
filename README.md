@@ -33,34 +33,70 @@ See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for components and data flow. [`ROADM
 ## Layout
 
 ```
-core/         domain types, protocols, backend impls (Mongo / Redis / S3)
-api/          FastAPI gateway                          (PLAN.md)
-dispatcher/   host-level scheduler                     (PLAN.md)
-workers/      worker base class + concrete shims       (PLAN.md)
-cli/          `spindle` CLI                             (PLAN.md)
+core/         domain types, protocols, backend impls (Mongo / Redis / S3)   ✓
+api/          FastAPI gateway                                                ✓
+runtime/      per-node bundle: supervisor + embedded dispatcher              ✓
+workers/      WorkerBase + concrete shims (audio_tts: openai/kokoro/f5)      ✓
+dispatcher/   PLAN doc only — implementation merged into runtime/
+cli/          `spindle` CLI                                                  (PLAN.md)
 infra/        Docker compose, MinIO bootstrap
+configs/      sample per-node runtime YAMLs
+docs/         consumer-facing API contract
 ```
 
-Each component directory has its own `PLAN.md` with goals, scope, file layout, and acceptance criteria.
+Each component directory has its own `PLAN.md` (design reference, locked decisions, acceptance criteria) plus the implementation under `src/`.
 
-## Running the test suite
+## Quickstart: submit a real job
 
 ```bash
 # install uv  (https://docs.astral.sh/uv/)
 brew install uv                                  # macOS
 # or: curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# start the backends
+# bring up state + queue + artifacts
 brew services start mongodb-community@7.0        # macOS
 brew services start redis
 cd infra/minio && ./bootstrap.sh && cd -         # MinIO via Docker
 
-# install deps + run
-uv sync --all-packages --all-extras
-uv run pytest core/tests                         # ~92 tests, real Mongo + Redis + MinIO
+# install workspace + the extras you actually need on this node
+# (kokoro / f5 pull torch — install them only on a GPU node)
+uv sync --all-packages --extra audio_tts --extra dev
+
+# start the API (control node)
+uv run spindle-api &
+
+# seed a ModelConfig
+curl -X POST http://localhost:8080/configs -H 'Content-Type: application/json' \
+  -d '{"id":"audio-tts-openai-v1","name":"OpenAI TTS","version":"v1",
+       "job_types":["audio.tts"],"preferred_node":"control-node",
+       "runtime_backend":"openai","model_ref":"tts-1-hd","is_active":true}'
+
+# start the runtime (supervisor + dispatcher + N worker processes)
+uv run spindle-workers run --config configs/runtime.control-node.yaml &
+
+# submit a job
+curl -X POST http://localhost:8080/jobs -H 'Content-Type: application/json' \
+  -d '{"type":"audio.tts","config_id":"audio-tts-openai-v1",
+       "input":{"text":"Hello world."}}'
+
+# poll
+curl http://localhost:8080/jobs/<id>
+```
+
+## Running the test suite
+
+```bash
+# install deps for the tests you want
+uv sync --all-packages --extra dev --extra audio_tts
+
+# unit + smoke tests across components (~36 + 92 core tests)
+uv run pytest core/tests api/tests runtime/tests workers/tests
+
 uv run --with ruff ruff check .
 uv run --with pyright pyright
 ```
+
+`--all-extras` pulls every backend; on Python 3.14 kokoro's transitive `spacy` dep doesn't have wheels — pick extras per host instead.
 
 Configure via env vars; copy `.env.example` to `.env` to override defaults.
 

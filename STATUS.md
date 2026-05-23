@@ -1,11 +1,11 @@
 # Spindle — Status
 
 > One-page "where are we, what's working, what's next" reference. Updated as we go.
-> Last commit: 2026-04-26 — `core/artifacts` (S3/MinIO).
+> Last verified: 2026-05-22 — end-to-end smoke (audio.tts jobs to all three backends across two nodes).
 
 ## Where we are in one paragraph
 
-Spindle is in active build-out of `core/` (the foundation everyone else depends on). All three swap-point protocols are implemented and battle-tested against real backends: **state** (Mongo), **queue** (Redis Streams), and **artifacts** (S3/MinIO). Worker process structure resolved (one process = one config, replicas via runtime supervisor); the first real workload — TTS for podcast-this — drives API + workers + runtime build-out next. 92 tests green, lint/format/pyright clean.
+End-to-end job submission roundtrips across a two-node cluster. Client posts a job to the API on the control node → it queues in Redis → the runtime on the matching node leases it via Mongo CAS → IPC-dispatches to a local worker → the worker uploads the artifact to MinIO and posts completion back. All three TTS backends — `openai` (control node), `kokoro` + `f5` (GPU node) — have round-tripped real jobs. 128 tests green across `core/`, `api/`, `runtime/`, `workers/`. Next: cancel + lease-expiry sweepers, the `spindle` CLI, and a second real workload (`audio_stitch` or `text_rewrite`) on top of this same plumbing.
 
 ---
 
@@ -89,13 +89,42 @@ Full design rationale: [`ARCHITECTURE.md`](./ARCHITECTURE.md). Phased build plan
   - Running on the GPU node, healthy, restart=unless-stopped
   - Credentials in `infra/minio/.env` on the GPU node (gitignored, persists across reboots)
 
+### `api/` — FastAPI gateway
+
+- v0 minimum endpoint surface: `POST /jobs` (idempotent), `GET /jobs/{id}`, worker-lifecycle posts (`/start`, `/complete`, `/fail`), `POST /configs`, `GET /artifacts/{id}/bytes`.
+- Built on `core/`'s `StateStore` + `JobQueue` + `ArtifactStore` — no business logic past CAS transitions.
+- Auto-loads `.env` at boot so child worker subprocesses inherit secrets (`OPENAI_API_KEY`, etc.).
+- `create_app(state=, queue=, artifacts=)` for dependency injection in tests.
+
+### `runtime/` — per-node supervisor + embedded dispatcher
+
+- **Supervisor**: YAML-driven, spawns N children per `WorkerSpec`, restarts on crash with exponential backoff, captures per-child logs to file + stderr tee.
+- **Dispatcher** (merged from the original separate-process plan): reads from per-config Redis streams, acquires lease via Mongo CAS, IPC-dispatches to a local worker. Worker selection in v0 is "first matching local worker" — no scoring yet.
+- `WorkerSpec.python:` allows per-worker Python interpreter (different venv per worker kind when model deps conflict).
+- `spindle-workers run / status / stop / logs` CLI.
+
+### `workers/` — base class + first three concrete workers
+
+- **`base/`** — `WorkerBase`, `WorkerConfig.from_env`, `IpcServer` (Unix socket + length-prefixed JSON), `ApiClient` (httpx async), `ArtifactWriter` (uploads bytes + collects `ArtifactMeta` for `/complete`).
+- **`audio_tts/`** subpackages, one per backend:
+  - `audio_tts.openai` — `OpenAITtsWorker`. Hosted, CPU-only. Default voice `onyx`.
+  - `audio_tts.kokoro` — `KokoroTtsWorker`. Local, ~82 M params, GPU recommended. Default voice `am_michael`.
+  - `audio_tts.f5` — `F5TtsWorker`. Local, voice-cloning. Defaults to f5-tts's bundled reference clip; per-call override via `voice="/path/to/ref.wav"` + `ref_text=`.
+- All three share an abstract `AudioTtsWorker` base — concrete subclass just sets `backend_name` + implements `_make_backend()`.
+
+### `infra/`
+
+- **`infra/minio/`** — Docker compose service + idempotent bootstrap script + README
+  - Running on the GPU node, healthy
+  - Credentials in `infra/minio/.env` on the GPU node (gitignored, persists across reboots)
+
 ### Repo / quality
 
 - uv workspace at root, `pyproject.toml` configured for ruff + pyright + pytest
 - LICENSE (Apache 2.0), .gitignore, .env.example, .env (local, gitignored)
-- 92 tests passing across types + state + queue + configs + artifacts
-- `ruff check` clean, `ruff format --check` clean, `pyright` 0 errors
-- All component PLAN.md files written (api, dispatcher, workers, cli, infra)
+- 128 tests passing across `core/`, `api/`, `runtime/`, `workers/`
+- `ruff check` clean
+- End-to-end smoke validated: real jobs to all three backends, artifacts in MinIO, durations correct
 
 ---
 
@@ -112,11 +141,11 @@ Full design rationale: [`ARCHITECTURE.md`](./ARCHITECTURE.md). Phased build plan
 
 In rough dependency order:
 
-1. **API** (`api/PLAN.md`) — FastAPI gateway, idempotency, worker-lifecycle endpoints. Doesn't depend on workers.
-2. **Runtime + dispatcher** (`runtime/PLAN.md` — merged) — per-node bundle: supervisor for worker processes + dispatcher tick loop in one process. Supervisor half is **already implemented** (commit `7e92fe7`). Dispatcher half pending: Redis read, Mongo lease acquisition, IPC dispatch to local children. `dispatcher/PLAN.md` is preserved as the design reference.
-3. **WorkerBase IPC + ApiClient + ArtifactWriter** (`workers/PLAN.md`) — base class already boots and registers; remaining: Unix-socket IPC server, API client for lifecycle posts, artifact upload helper.
-4. **Real workers (beyond audio_tts.openai)** — `audio_tts.kokoro` migrated (commit `ac4149d`, needs Py 3.12/3.13 venv to actually run); `audio_tts.f5` deferred; text LLMs, ComfyUI image/video, audio_stitch arrive later.
-5. **CLI** (`cli/PLAN.md`) — thin Typer wrapper over API.
+1. **CLI** (`cli/PLAN.md`) — thin Typer wrapper over API. Replaces ad-hoc curl invocations in the Quickstart.
+2. **Cancel + sweepers in the dispatcher** — `POST /jobs/{id}/cancel`, cancel-status polling endpoint, lease-expiry sweeper that requeues / dead-letters, deadline sweeper. Out of v0 because podcast-shape jobs are short.
+3. **`audio_stitch` worker** — concat WAVs + mp3-encode + ID3v2 chapter markers. The next real workload after `audio.tts` (rides the same WorkerBase).
+4. **`text_rewrite` worker** — Claude / OpenAI wrapper. Second real workload; same shape as audio_tts. Unblocks podcast-this rewriting markdown sections into spoken-form scripts.
+5. **`audio_tts.f5` voice cloning UX** — currently uses the bundled reference clip from f5-tts. Add per-job custom reference upload + cache.
 6. **Eval / replay primitives** — shard, replay, score, compare. Phase 7.
 7. **ClickHouse telemetry** — async event mirror from state. Phase 8.
 8. **Web UI** — far future, optional.
@@ -130,6 +159,9 @@ Items flagged but not yet answered or explicitly punted:
 | Decision | Status | Notes |
 |---|---|---|
 | Worker process structure (one-config GPU vs many-config CPU pool) | **resolved** | One process = one config. CPU pools achieved via N replicas in the runtime supervisor's YAML, not via multi-config in one process. See `runtime/PLAN.md`. |
+| Dispatcher as separate process vs embedded in runtime | **resolved (embedded)** | At 1–2 nodes the two-process split bought no isolation but doubled operational surface. Folded into `runtime/` — same per-node singleton, half the things to start. Escape hatch documented in `runtime/PLAN.md`. |
+| Cross-node service exposure (Mongo / Redis on control node ↔ workers on GPU node) | **resolved (LAN bind)** | Mongo + Redis bind to loopback + the control node's LAN IP; LAN-only reachable. Auth deferred until something is on a non-trusted network. |
+| Artifact module gitignored | **resolved** | `.gitignore` had unanchored `artifacts/` matching `core/src/spindle_core/artifacts/` — the entire ArtifactStore module wasn't in the repo. Now anchored to `/artifacts/` etc. |
 | `Worker.current_job_ids` field | **dropped** | Volatile state; query `jobs` collection on demand instead |
 | Per-job-type input/output schemas | deferred | Lives in `api/` when we build it; conventions documented |
 | `runtime_backend` as enum vs string | leaned enum, not yet enforced | Cosmetic, can change anytime |
