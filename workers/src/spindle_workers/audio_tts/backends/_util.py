@@ -87,15 +87,31 @@ def samples_to_wav(samples, sample_rate: int) -> bytes:
 
 
 def wav_duration_seconds(wav_bytes: bytes) -> float:
-    """Inspect a WAV blob and return its duration in seconds."""
+    """Inspect a WAV blob and return its duration in seconds.
+
+    Some writers (notably OpenAI TTS) leave the WAV data chunk's length
+    header as the INT32 sentinel (~2.1B) when the audio is produced
+    streaming-style without a known final length. In that case
+    ``wave.getnframes()`` returns the sentinel and the naive
+    ``frames / rate`` calculation explodes. Detect that case and fall back
+    to computing from the actual buffer size.
+    """
     if not wav_bytes:
         return 0.0
     reader = wave.open(io.BytesIO(wav_bytes), "rb")
     try:
-        frames = reader.getnframes()
         rate = reader.getframerate()
         if rate == 0:
             return 0.0
-        return frames / rate
+        nframes = reader.getnframes()
+        channels = reader.getnchannels()
+        sample_width = reader.getsampwidth()
+        # Plausibility bound: ~24h at 96 kHz is still under ~8.3 billion
+        # frames, so anything near INT32_MAX is the sentinel.
+        if nframes <= 0 or nframes >= 2_000_000_000:
+            audio_bytes = max(0, len(wav_bytes) - 44)  # standard PCM header
+            denom = max(1, channels * sample_width)
+            nframes = audio_bytes // denom
+        return nframes / rate
     finally:
         reader.close()

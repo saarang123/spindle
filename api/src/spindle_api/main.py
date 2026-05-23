@@ -28,8 +28,7 @@ from uuid import UUID, uuid4
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Request, Response
 
 # Pull SPINDLE_* and any sibling secrets out of .env into os.environ before
 # Settings is instantiated.
@@ -375,14 +374,18 @@ def _register_routes(app: FastAPI) -> None:
     async def get_artifact_bytes(
         artifact_id: UUID,
         request: Request,
-    ) -> StreamingResponse:
+    ) -> Response:
         state = _state(request)
         artifacts = _artifacts(request)
         meta = await state.get_artifact(artifact_id)
         if meta is None:
             raise HTTPException(404, "artifact not found")
-        return StreamingResponse(
-            artifacts.get(meta.uri),
+        # ArtifactStore.get returns bytes (a full body) per the v0 protocol.
+        # If artifacts grow large we'll add a chunked iterator method on the
+        # store and switch back to StreamingResponse.
+        data = await artifacts.get(meta.uri)
+        return Response(
+            content=data,
             media_type=meta.mime_type or "application/octet-stream",
         )
 
