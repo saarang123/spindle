@@ -1,4 +1,4 @@
-# Runtime supervisor config for the GPU node (DGX Spark).
+# Runtime supervisor config for the GPU node.
 #
 # Hosts GPU-bound workers: local TTS models, future image / video diffusion.
 # CPU-bound work (HTTP API clients) belongs on the control-node.

@@ -1,4 +1,4 @@
-# Runtime supervisor config for the control node (Mac mini).
+# Runtime supervisor config for the control node.
 #
 # Hosts CPU-bound workers: HTTP API clients (OpenAI / Anthropic / etc.),
 # audio stitching, ffmpeg. Heavy GPU work belongs on the gpu-node.

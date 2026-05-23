@@ -41,10 +41,11 @@ dist/
 build/
 *.egg
 
-# spindle local data
-artifacts/
-data/
-logs/
+# spindle local data — anchored to repo root so they don't accidentally
+# match Python packages like core/src/spindle_core/artifacts/
+/artifacts/
+/data/
+/logs/
 *.sqlite
 *.sqlite-journal
 .spindle/

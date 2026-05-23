@@ -34,7 +34,7 @@ Three things are intentionally swappable behind protocols: the **state store**, 
 The reference deployment is a **control node + GPU node**, but no code hardcodes that. Nodes are arbitrary strings; capabilities and resource pools do the work.
 
 ```
-┌─────────────────── control node (~64 GB RAM) ──────────────────────┐
+┌─────────────────── control node ───────────────────────────────────┐
 │  FastAPI gateway        :8080 (LAN-bound)                          │
 │  MongoDB                :27017 (LAN-bound, auth required)          │
 │  Redis                  :6379  (LAN-bound, auth required)          │
@@ -46,7 +46,7 @@ The reference deployment is a **control node + GPU node**, but no code hardcodes
                                 │  ethernet LAN
                                 │  mDNS or /etc/hosts
                                 ▼
-┌─────────────────── GPU node (~128 GB RAM) ─────────────────────────┐
+┌─────────────────── GPU node ───────────────────────────────────────┐
 │  gpu-dispatcher         (one process)                              │
 │  image worker           (diffusers / comfy client)                 │
 │  video worker           (comfy / CLI client)                       │

@@ -13,8 +13,8 @@ Spindle is in active build-out of `core/` (the foundation everyone else depends 
 
 | Node | Role | Spec | Storage |
 |---|---|---|---|
-| **control node** | API + state plane | ~64 GB RAM, ARM | internal NVMe (DBs only) + optional external SSD (models, Docker, caches) |
-| **GPU node** | GPU + artifact store | ~128 GB RAM, NVIDIA GPU | ~4 TB internal NVMe (MinIO + model weights) |
+| **control node** | API + state plane | sufficient RAM for Mongo/Redis/API | DBs on internal storage |
+| **GPU node** | GPU + artifact store | enough VRAM for the heaviest local model | MinIO + model weights on local storage |
 
 What runs where:
 
