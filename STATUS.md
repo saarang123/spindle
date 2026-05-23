@@ -56,7 +56,7 @@ Three swap points define the architecture:
 | Per-config job queue | `JobQueue` | `redis_streams`, `memory` | ✅ done |
 | Artifact bytes | `ArtifactStore` | `s3`, `memory`, `local` | 🚧 next up |
 
-Anyone reading the API/dispatcher/worker code never imports a concrete backend. Swap by changing one env var.
+Anyone reading the API / runtime / worker code never imports a concrete backend. Swap by changing one env var.
 
 Full design rationale: [`ARCHITECTURE.md`](./ARCHITECTURE.md). Phased build plan: [`ROADMAP.md`](./ROADMAP.md).
 
@@ -231,5 +231,5 @@ uv run --with pyright pyright        # → 0 errors
 - Design / contracts: [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 - Phased plan: [`ROADMAP.md`](./ROADMAP.md)
 - MinIO setup: [`infra/minio/README.md`](./infra/minio/README.md)
-- Per-component plans: `core/PLAN.md`, `api/PLAN.md`, `dispatcher/PLAN.md`, `workers/PLAN.md`, `cli/PLAN.md`, `infra/PLAN.md`
+- Per-component plans: `core/PLAN.md`, `api/PLAN.md`, `runtime/PLAN.md`, `workers/PLAN.md`, `cli/PLAN.md`, `infra/PLAN.md`
 - This file: live status; update as state changes.

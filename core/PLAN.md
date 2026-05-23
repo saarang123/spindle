@@ -210,7 +210,7 @@ class Lease(BaseModel):
 
 ### `JobEvent`
 
-Append-only; written by API/dispatcher/workers. Phase 1 stores them in `StateStore.record_event` for durability; Phase 8 mirrors to ClickHouse.
+Append-only; written by API / runtime / workers. Phase 1 stores them in `StateStore.record_event` for durability; Phase 8 mirrors to ClickHouse.
 
 ```python
 class JobEventType(StrEnum):

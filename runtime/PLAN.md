@@ -7,7 +7,7 @@ A small, per-node Python process that does two things in one place:
 
 Both run as asyncio tasks in the same TaskGroup. They share an in-memory view of "workers on this machine," so the dispatcher doesn't have to re-discover children via the `/tmp/spindle-workers/` registry directory — it reads the supervisor's `ChildProcess` list directly. One runtime instance per machine.
 
-Read [`../ARCHITECTURE.md`](../ARCHITECTURE.md) section 3 (Components → runtime) and [`../workers/PLAN.md`](../workers/PLAN.md) (workers do not know the runtime exists; they receive jobs via IPC and report lifecycle via the API). The full design rationale for the dispatcher half lives in [`../dispatcher/PLAN.md`](../dispatcher/PLAN.md) — kept as a reference doc; the implementation lives here under `dispatcher.py`.
+Read [`../ARCHITECTURE.md`](../ARCHITECTURE.md) section 3 (Components → runtime) and [`../workers/PLAN.md`](../workers/PLAN.md) (workers do not know the runtime exists; they receive jobs via IPC and report lifecycle via the API). The dispatcher half's implementation lives here under `dispatcher.py`; deferred dispatcher features (sweepers, scoring, recovery sweep, cancel propagation) are listed in the "Out of scope" section below.
 
 ## Goal
 
@@ -16,11 +16,11 @@ Read [`../ARCHITECTURE.md`](../ARCHITECTURE.md) section 3 (Components → runtim
 3. A `spindle workers` subcommand group (`run`, `status`, `stop`, `logs`) for operator control.
 4. Per-machine deploys: each node has its own YAML; the runtime reads only that file.
 
-The supervisor half is deliberately smaller than supervisord / systemd / launchd — platform-agnostic Python with no extra system dependencies, and a debugging path that lets you bypass it by `uv run python -m spindle_workers.<kind>` with the same env contract. The dispatcher half follows Spindle's planned design (see `../dispatcher/PLAN.md`) but skips sweepers / scoring / recovery in v0.
+The supervisor half is deliberately smaller than supervisord / systemd / launchd — platform-agnostic Python with no extra system dependencies, and a debugging path that lets you bypass it by `uv run python -m spindle_workers.<kind>` with the same env contract. The dispatcher half implements the tick loop + IPC dispatch + lease acquisition; sweepers / scoring / recovery defer (see "Out of scope" below).
 
 ## Why bundled (tradeoffs)
 
-`dispatcher/PLAN.md` originally specced the dispatcher as its own process. At single-node and two-node scale (Spindle's current deployment surface), two per-node processes (supervisor + dispatcher) bought no real isolation but doubled the operational surface. Folding them into one runtime trades a small amount of failure-domain purity for meaningful ergonomic gains.
+The dispatcher was originally specced as its own process — a separate `dispatcher/` component with its own PLAN. At single-node and two-node scale (Spindle's current deployment surface), two per-node processes (supervisor + dispatcher) bought no real isolation but doubled the operational surface. Folding them into one runtime trades a small amount of failure-domain purity for meaningful ergonomic gains.
 
 **What we gain:**
 

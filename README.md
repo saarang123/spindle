@@ -59,7 +59,6 @@ core/         domain types, protocols, backend impls (Mongo / Redis / S3)   ✓
 api/          FastAPI gateway                                                ✓
 runtime/      per-node bundle: supervisor + embedded dispatcher              ✓
 workers/      WorkerBase + concrete shims (audio_tts: openai/kokoro/f5)      ✓
-dispatcher/   PLAN doc only — implementation merged into runtime/
 cli/          `spindle` CLI                                                  (PLAN.md)
 infra/        Docker compose, MinIO bootstrap
 configs/      sample per-node runtime YAMLs

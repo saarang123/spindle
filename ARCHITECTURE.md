@@ -80,13 +80,7 @@ FastAPI gateway. The only HTTP-facing service. Owns:
 - Worker-reported lifecycle events (start, progress, complete, fail, extend lease).
 - Artifact metadata recording + cross-host artifact fetch proxy.
 
-API does **not** do leasing — that's the dispatcher. API talks to `StateStore` and `JobQueue` directly.
-
-### `dispatcher/` (merged into `runtime/`)
-
-The dispatcher's responsibilities — read from per-config Redis streams, score candidates, atomically lease via `StateStore.acquire_lease`, hand off to local workers via Unix socket, run sweepers (lease expiry, deadline, cancellation) — now live as an asyncio task inside the runtime supervisor (see `runtime/` below). Same per-node-singleton semantics; one less process to start; in-memory access to the supervisor's `ChildProcess` list eliminates registry-file polling.
-
-`dispatcher/PLAN.md` is preserved as the design reference. The v0 implementation in `runtime/dispatcher.py` covers the tick loop + IPC dispatch + lease acquisition; sweepers / scoring / recovery defer.
+API does **not** do leasing — that's the dispatcher (which now lives inside `runtime/`; see below). API talks to `StateStore` and `JobQueue` directly.
 
 ### `workers/`
 
