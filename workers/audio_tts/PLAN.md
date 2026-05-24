@@ -16,7 +16,7 @@ Read [`../PLAN.md`](../PLAN.md) for the `WorkerBase` design; this doc covers onl
 Lives inside `workers/`.
 
 ```
-workers/src/spindle_workers/audio_tts/
+workers/spindle_workers/audio_tts/
   __init__.py
   worker.py             # AudioTtsWorker(WorkerBase)
   main.py               # `python -m spindle_workers.audio_tts`
